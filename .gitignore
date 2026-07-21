@@ -1,0 +1,6 @@
+zig-out/
+zig-pkg/
+keymap
+.zig-cache
+.direnv
+src/wayland.zig
