@@ -122,29 +122,28 @@ const Wrapper = struct {
     }
 };
 
-fn getPrefix(x: Interface.Msg.Arg) []const u8 {
-    return switch (x.type) {
-        .new_id => if (x.interface) |_| "Interface.Protocol." else "",
-        .uint => if (x.@"enum") |_| "Interface.Enum." else "",
-        else => "",
-    };
-}
-fn getType(x: Interface.Msg.Arg) []const u8 {
+fn getType(alloc: std.mem.Allocator, x: Interface.Msg.Arg) ![]const u8 {
     return switch (x.type) {
         .array => "[]const u8", // Should be wrapped?
         .fixed => "i32", // Signed 24.8 decimal numbers
         .fd => "fd", //"std.posix.fd_t",
         .int => "i32",
-        // pub const any = struct { interface: []const u8, version: u32, id: u32 };
-        // maybe use wl_registry.global?
+        // maybe use wl_registry.global as any?
         .new_id => x.interface orelse "any",
         .object => "u32", // id of object
         .string => "[]const u8",
-        .uint => x.@"enum" orelse "u32",
+        .uint => if (x.@"enum") |e| sol: {
+            var it = std.mem.splitBackwardsScalar(u8, e, '.');
+            const name = it.next().?;
+            const mI = it.next();
+            break :sol try std.fmt.allocPrint(alloc, "{s}.{s}.{s}", .{ mI orelse "Interface", "Enum", name });
+        } else "u32",
     };
 }
 
 pub fn main(init: std.process.Init) !void {
+    const alloc = init.arena.allocator();
+
     const parsed = try Parsed.init(init, &[_][]const u8{"spec/wayland.json"});
     defer parsed.deinit();
     var w = try Wrapper.init(init.io, "src/wayland.zig");
@@ -170,7 +169,7 @@ pub fn main(init: std.process.Init) !void {
                 try w.addConst("Interface", interface.name);
                 try w.print("pub const Opcode = {};", .{opcode});
                 for (e.arg.data) |a|
-                    try w.print("{s}: {s}{s},", .{ a.name, getPrefix(a), getType(a) });
+                    try w.print("{s}: {s},", .{ a.name, try getType(alloc, a) });
                 try w.end();
             }
             try w.end();
@@ -180,7 +179,7 @@ pub fn main(init: std.process.Init) !void {
                 try w.addConst("Interface", interface.name);
                 try w.print("pub const Opcode = {};", .{opcode});
                 for (e.arg.data) |a|
-                    try w.print("{s}: {s}{s},", .{ a.name, getPrefix(a), getType(a) });
+                    try w.print("{s}: {s},", .{ a.name, try getType(alloc, a) });
                 try w.end();
             }
             try w.end();
