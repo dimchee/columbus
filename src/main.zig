@@ -1,7 +1,16 @@
 const std = @import("std");
 const clb = @import("columbus");
 const way = clb.way;
+const meta = clb.meta;
+
 // TODO Opcode is equal to index in decls, use that
+// Something like:
+// Env.register(struct {
+//     // Must be marked pub
+//     pub fn print_global(x: way.wayland.wl_registry.Event.global) void {
+//         std.debug.print("global name: {} version: {} interface: {s}\n", .{ x.name, x.version, x.interface });
+//     }
+// });
 
 const Header = extern struct { object_id: u32, opcode: u16, size: u16 };
 const Len = struct { ctrl: u16, msg: u16 };
@@ -35,7 +44,7 @@ pub fn send(socket: std.posix.socket_t, alloc: std.mem.Allocator, sender: anytyp
                 []const u8 => len.msg += 4 + Mem.aligned(f.len + 1),
                 way.fd => len.ctrl += 20, // TODO why?
                 way.any => len.msg += 4 + Mem.aligned(f.interface.len + 1) + 4 + 4,
-                inline else => |X| if (comptime @hasDecl(X, "Protocol") or @hasDecl(X, "Interface")) {
+                inline else => |X| if (comptime meta.is(.interface, X) or meta.is(.@"enum", X)) {
                     len.msg += @sizeOf(X);
                 } else @compileError(@typeName(X) ++ " is not Enum, nor Interface"),
             }
@@ -46,7 +55,7 @@ pub fn send(socket: std.posix.socket_t, alloc: std.mem.Allocator, sender: anytyp
     var mem = .{ .msg = Mem{ .mem = data[0] }, .ctrl = Mem{ .mem = data[1] } };
     mem.msg.push(Header, .{
         .object_id = sender.id,
-        .opcode = @TypeOf(msg).Opcode,
+        .opcode = meta.opcode(@TypeOf(msg)),
         .size = len.msg,
     });
     inline for (@typeInfo(@TypeOf(msg)).@"struct".fields) |field| {
@@ -68,42 +77,48 @@ pub fn send(socket: std.posix.socket_t, alloc: std.mem.Allocator, sender: anytyp
                 mem.msg.push(u32, f.version);
                 mem.msg.push(u32, f.id);
             },
-            inline else => |X| if (comptime @hasDecl(X, "Protocol")) {
-                mem.msg.push(u32, f.id);
-            } else if (comptime @hasDecl(X, "Interface")) {
-                mem.msg.push(X, f);
-            } else @compileError(@typeName(X) ++ " is not writable"),
+            inline else => |X| if (comptime meta.is(.interface, X))
+                mem.msg.push(u32, f.id)
+            else if (comptime meta.is_enum(X))
+                mem.msg.push(X, f)
+            else
+                @compileError(@typeName(X) ++ " is not Enum, nor Interface"),
         }
         std.debug.assert(mem.msg.mem.len == 0);
         std.debug.assert(mem.ctrl.mem.len == 0);
     }
+    // std.debug.print("`{x}` `{x}`\n", .{ data[0], data[1] });
 
-    const msghdr = std.posix.msghdr_const{
+    const iovec = try alloc.alloc(std.posix.iovec_const, 1);
+    iovec[0] = .{ .base = data[0].ptr, .len = data[0].len };
+    const msghdr = try alloc.alloc(std.posix.msghdr_const, 1);
+    msghdr[0] = std.posix.msghdr_const{
         .name = null,
         .namelen = 0,
-        .iov = &[_]std.posix.iovec_const{.{ .base = data[0].ptr, .len = data[0].len }},
-        .iovlen = 1,
+        .iov = iovec.ptr,
+        .iovlen = iovec.len,
         .control = data[1].ptr,
         .controllen = data[1].len,
         .flags = 0,
     };
-    if (std.os.linux.sendmsg(socket, &msghdr, 0) < len.msg)
+    // std.debug.print("ctrl: [{s}]", .{});
+    if (std.os.linux.sendmsg(socket, &msghdr[0], 0) < len.msg)
         @panic("Impossible");
 }
 
 const Env = struct {
-    env: [64]TypeId, // Maps id to TypeId
+    env: [64]meta.TypeId, // Maps id to TypeId
     id: u32,
     fn init() @This() {
         return .{ .id = 0, .env = undefined };
     }
     fn new(self: *@This(), X: type) X {
         self.id += 1;
-        self.env[self.id] = typeId(X);
+        self.env[self.id] = meta.typeId(X);
         return .{ .id = self.id };
     }
 };
-const Read = struct { type_id: TypeId, bytes: []u8 };
+const Read = struct { type_id: meta.TypeId, bytes: []u8 };
 
 pub fn readOp(alloc: std.mem.Allocator, Op: type, mem: anytype) !Read {
     var op: Op = undefined;
@@ -112,7 +127,7 @@ pub fn readOp(alloc: std.mem.Allocator, Op: type, mem: anytype) !Read {
             i32, u32 => @field(op, field.name) = mem.msg.readT(field.type),
             []const u8 => {
                 const len = mem.msg.readT(u32);
-                @field(op, field.name) = mem.msg.read(len - 1);
+                @field(op, field.name) = try alloc.dupe(u8, mem.msg.read(len - 1));
                 _ = mem.msg.read(Mem.aligned(len) - len + 1);
             },
             // way.array => {
@@ -133,7 +148,10 @@ pub fn readOp(alloc: std.mem.Allocator, Op: type, mem: anytype) !Read {
             } else @compileError(@typeName(X) ++ " is not readable"),
         }
     }
-    return .{ .type_id = typeId(Op), .bytes = try alloc.dupe(u8, @as([]u8, @ptrCast(&op))) };
+    const alignment = comptime std.mem.Alignment.of(Op);
+    const bytes = try alloc.alignedAlloc(u8, alignment, @sizeOf(Op));
+    @memcpy(bytes, @as([*]const u8, @ptrCast(&op))[0..@sizeOf(Op)]);
+    return .{ .type_id = meta.typeId(Op), .bytes = bytes };
 }
 pub fn read(alloc: std.mem.Allocator, env: *Env, socket: std.posix.socket_t) ![]Read {
     var buf = struct { msg: [1024]u8, ctrl: [1024]u8 }{ .msg = undefined, .ctrl = undefined };
@@ -175,7 +193,7 @@ pub fn read(alloc: std.mem.Allocator, env: *Env, socket: std.posix.socket_t) ![]
                 const msg = x: {
                     inline for (@typeInfo(way.wayland).@"struct".decls) |d| {
                         const X = @field(way.wayland, d.name);
-                        if (typeId(X) == env.env[header.object_id]) {
+                        if (meta.typeId(X) == env.env[header.object_id]) {
                             const ops = @typeInfo(X.Event).@"struct".decls;
                             if (ops.len != 0) {
                                 switch (header.opcode) {
@@ -194,81 +212,7 @@ pub fn read(alloc: std.mem.Allocator, env: *Env, socket: std.posix.socket_t) ![]
     }
     return msgs.items;
 }
-// const Env = struct {
-//     pub fn register(X: type) void {
-//         switch (@typeInfo(X)) {
-//             .@"struct" => |s| {
-//                 inline for (s.decls) |decl| {
-//                     const func = @field(X, decl.name);
-//                     inline for (@typeInfo(@TypeOf(func)).@"fn".params) |p| {
-//                         std.debug.print("fn {s}({s})\n", .{ decl.name, @typeName(p.type orelse void) });
-//                     }
-//                 }
-//             },
-//             else => @compileError("Can register only structs."),
-//         }
-//     }
-// };
 
-const ts = [_]type{ i32, void, i64, bool };
-pub fn getType(x: usize) ?type {
-    return if (x < ts.len) ts[x] else null;
-}
-
-const TypeId = *const struct { _: u8 };
-pub inline fn typeId(comptime T: type) TypeId {
-    return &struct {
-        comptime {
-            _ = T;
-        }
-        var id: @typeInfo(TypeId).pointer.child = undefined;
-    }.id;
-}
-
-pub fn main(init: std.process.Init) !void {
-    const soc = try init_display(init);
-    const alloc = init.arena.allocator();
-
-    var env = Env.init();
-    const display = env.new(way.wayland.wl_display);
-    const registry = env.new(way.wayland.wl_registry);
-    const wl_callback = env.new(way.wayland.wl_callback);
-    try send(soc, alloc, display, way.wayland.wl_display.Request.get_registry{ .registry = registry });
-    try send(soc, alloc, display, way.wayland.wl_display.Request.sync{ .callback = wl_callback });
-    const rs = try read(alloc, &env, soc);
-    for (rs) |r| switch (r.type_id) {
-        typeId(way.wayland.wl_registry.Event.global) => {
-            const x: *way.wayland.wl_registry.Event.global = @alignCast(@ptrCast(r.bytes));
-            std.debug.print("global name: {} version: {} interface: {s}\n", .{ x.name, x.version, x.interface });
-        },
-        else => std.debug.print("Ignored Msg\n", .{}),
-    };
-    // Env.register(struct {
-    //     // Must be marked pub
-    //     pub fn print_global(x: way.wayland.wl_registry.Event.global) void {
-    //         std.debug.print("global name: {} version: {} interface: {s}\n", .{ x.name, x.version, x.interface });
-    //     }
-    // });
-    // loop: while (true) {
-    //     var r = try env.read(.servertoclient);
-    //     defer r.deinit();
-    //     for (r.msgs) |msg| switch (msg) {
-    //         .wayland => |protocol| switch (protocol) {
-    //             .wl_registry => |interface| switch (interface) {
-    //                 .global => |x| {
-    //                     std.debug.print("global name: {} version: {} interface: {s}\n", .{ x.name, x.version, x.interface });
-    //                 },
-    //                 else => {},
-    //             },
-    //             .wl_callback => |interface| switch (interface) {
-    //                 else => break :loop,
-    //             },
-    //             else => {},
-    //         },
-    //         else => {},
-    //     };
-    // }
-}
 fn init_display(pInit: std.process.Init) !std.posix.socket_t {
     const display_path = try x: {
         const xdg_runtime_dir = pInit.environ_map.get("XDG_RUNTIME_DIR") orelse
@@ -300,5 +244,26 @@ fn init_display(pInit: std.process.Init) !std.posix.socket_t {
         const soc_len = @as(std.os.linux.socklen_t, @intCast(@sizeOf(std.os.linux.sockaddr.un)));
         _ = std.os.linux.connect(sockfd, @ptrCast(&addr), soc_len);
         break :x sockfd;
+    };
+}
+
+pub fn main(init: std.process.Init) !void {
+    const soc = try init_display(init);
+    const alloc = init.arena.allocator();
+
+    var env = Env.init();
+    const display = env.new(way.wayland.wl_display);
+    const registry = env.new(way.wayland.wl_registry);
+    const wl_callback = env.new(way.wayland.wl_callback);
+    try send(soc, alloc, display, way.wayland.wl_display.Request.get_registry{ .registry = registry });
+    try send(soc, alloc, display, way.wayland.wl_display.Request.sync{ .callback = wl_callback });
+    try std.Io.sleep(init.io, .fromMilliseconds(200), .real); // too fast otherwise
+    const rs = try read(alloc, &env, soc);
+    for (rs) |r| switch (r.type_id) {
+        meta.typeId(way.wayland.wl_registry.Event.global) => {
+            const x: *way.wayland.wl_registry.Event.global = @ptrCast(@alignCast(r.bytes));
+            std.debug.print("global name: {} version: {} interface: {s}\n", .{ x.name, x.version, x.interface });
+        },
+        else => std.debug.print("Ignored Msg\n", .{}),
     };
 }
