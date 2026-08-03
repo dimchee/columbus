@@ -66,8 +66,15 @@ pub fn index(k: Kind, T: type) ?Index(k) {
     if (!@inComptime()) @compileError("meta available at comptime only!");
     return getVal(T, Index(k), @field(maps, @tagName(k)));
 }
-pub fn is(k: Kind, T: type) bool {
+pub inline fn is(k: Kind, T: type) bool {
     return index(k, T) != null;
+}
+pub fn getKind(T: type) Kind {
+    for (@typeInfo(Kind).@"enum".fields) |f| {
+        const k = @field(Kind, f.name);
+        if (is(k, T)) return k;
+    }
+    @compileError(@typeName(T) ++ " doesn't have Kind");
 }
 pub fn opcode(T: type) comptime_int {
     if (is(.event, T)) return lists.events.opCodes[index(.event, T).?.val];
