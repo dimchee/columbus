@@ -3,8 +3,7 @@ const clb = @import("columbus");
 const way = clb.way;
 const meta = clb.meta;
 
-// TODO Opcode is equal to index in decls, use that
-// Something like:
+// TODO Something like:
 // Env.register(struct {
 //     // Must be marked pub
 //     pub fn print_global(x: way.wayland.wl_registry.Event.global) void {
@@ -12,8 +11,119 @@ const meta = clb.meta;
 //     }
 // });
 
+// This connection has ring buffer for recv and for send. Recv fills ring buffer, send empties ring buffer. You should yorself do the rest
+// TODO multiple msgs `send` and `recv`
+const Connection = struct {
+    // std.Io.Writer.fixed
+    const Buf = struct { msg: [2048]u8, ctrl: [1024]u8 };
+    const Msg = struct { msg: []u8, ctrl: []u8 };
+    buf: struct { recv: Buf, send: Buf },
+    socket: std.posix.socket_t,
+    pub fn init(socket: std.posix.socket_t) @This() {
+        return .{ .buf = undefined, .socket = socket };
+    }
+    /// This function should send Msgs allocated in buf.send
+    pub fn send(self: @This(), msg: Msg) !void {
+        if (std.os.linux.sendmsg(self.socket, &std.posix.msghdr_const{
+            .name = null,
+            .namelen = 0,
+            .iov = &[_]std.posix.iovec_const{.{ .base = msg.msg.ptr, .len = msg.msg.len }},
+            .iovlen = 1,
+            .control = msg.ctrl.ptr,
+            .controllen = msg.ctrl.len,
+            .flags = 0,
+        }, 0) < msg.msg.len) @panic("Impossible");
+    }
+    /// This function invalidates last recv msgs
+    pub fn recv(self: *@This()) !?Msg {
+        var msg_iov = [_]std.posix.iovec{.{ .base = &self.buf.recv.msg, .len = self.buf.recv.msg.len }};
+        var msg_hdr = std.posix.msghdr{
+            .name = null,
+            .namelen = 0,
+            .iov = &msg_iov,
+            .iovlen = msg_iov.len,
+            .control = &self.buf.recv.ctrl,
+            .controllen = self.buf.recv.ctrl.len,
+            .flags = 0,
+        };
+        // TODO if msg overflows (`len == buf.msg.len`), read again
+        const len = std.os.linux.recvmsg(self.socket, &msg_hdr, std.os.linux.MSG.DONTWAIT);
+        const WOULDBLOCK: usize = @bitCast(@as(isize, -11)); // TODO does it work?
+        if (len == WOULDBLOCK) return null else if (len < 0) return error.recvmsg;
+        // if (len == 0) return error.len0;
+        return Msg{ .msg = self.buf.recv.msg[0..len], .ctrl = self.buf.recv.ctrl[0..] };
+    }
+};
+
+const MsgIt = struct {
+    msg: []u8,
+    ctrl: []u8,
+    fn init(msg: Connection.Msg) @This() {
+        return .{ .msg = msg.msg, .ctrl = msg.ctrl };
+    }
+    fn get(T: type, bytes: *[]u8) T {
+        const sol: T = @bitCast(bytes.*[0..@sizeOf(T)].*);
+        bytes.* = bytes.*[@sizeOf(T)..];
+        return sol;
+    }
+    fn readOp(self: *@This(), Op: type) Op {
+        var op: Op = undefined;
+        inline for (@typeInfo(Op).@"struct".fields) |field| {
+            switch (field.type) {
+                i32, u32 => @field(op, field.name) = get(field.type, &self.msg),
+                []const u8 => {
+                    const len = get(u32, &self.msg);
+                    @field(op, field.name) = self.msg[0 .. len - 1];
+                    self.msg = self.msg[std.mem.alignForward(u16, @intCast(len), @sizeOf(u32))..];
+                },
+                // way.array => {
+                //     const len = mem.self.msg.readT(u32);
+                //     @field(op, field.name) = .{ .data = mem.self.msg.read(len) };
+                //     _ = mem.self.msg.read(Mem.aligned(len) - len);
+                // },
+                way.fd => {
+                    self.msg = self.msg[@sizeOf(u64) + @sizeOf(i32) + @sizeOf(i32) ..]; // _, std.posix.SOL.SOCKET, 0x01
+                    @field(op, field.name) = .{ .fd = get(i32, &self.ctrl) };
+                },
+                inline else => |X| if (comptime meta.is(.interface, X)) {
+                    @panic("ToDoInterface");
+                } else if (comptime meta.is(.@"enum", X)) {
+                    @panic("ToDoEnum");
+                    // @field(op, field.name) = get(field.type, &self.msg);
+                } else @compileError(@typeName(X) ++ " is not readable"),
+            }
+        }
+        return op;
+    }
+    const Read = struct { type_id: meta.Index(.event), bytes: []u8 };
+    pub fn next(self: *@This(), alloc: std.mem.Allocator, env: *Env) ?Read {
+        if (self.msg.len == 0) return null; // TODO hack
+        if (self.msg.len < @sizeOf(Header)) @panic("Impossible");
+        const header = get(Header, &self.msg);
+        if (self.msg.len + @sizeOf(Header) < header.size) @panic("Impossible");
+        switch (env.env[header.object_id].val) {
+            meta.lists.interfaces.len...std.math.maxInt(usize) => unreachable,
+            inline else => |ind| {
+                const I = meta.lists.interfaces[ind];
+                const ops = @typeInfo(I.Event).@"struct".decls;
+                if (ops.len != 0) {
+                    switch (header.opcode) {
+                        ops.len...std.math.maxInt(@TypeOf(header.opcode)) => unreachable,
+                        inline else => |op_id| {
+                            const Op = @field(I.Event, ops[op_id].name);
+                            const op = alloc.create(Op) catch @panic("Couldn't allocate");
+                            op.* = self.readOp(Op);
+                            return Read{ .bytes = @ptrCast(op), .type_id = comptime meta.index(.event, Op).? };
+                        },
+                    }
+                } else unreachable;
+            },
+        }
+    }
+};
 const Header = extern struct { object_id: u32, opcode: u16, size: u16 };
 const Len = struct { ctrl: u16, msg: u16 };
+// TODO remove struct, put `push` in Msg
 const Mem = struct {
     mem: []u8,
     fn push(self: *@This(), T: type, x: T) void {
@@ -51,8 +161,10 @@ pub fn send(socket: std.posix.socket_t, alloc: std.mem.Allocator, sender: anytyp
         }
         break :x len;
     };
-    const data = .{ try alloc.alloc(u8, len.msg), try alloc.alloc(u8, len.ctrl) };
-    var mem = .{ .msg = Mem{ .mem = data[0] }, .ctrl = Mem{ .mem = data[1] } };
+    // var buf: struct { msg: [2048]u8, ctrl: [1024]u8 } = undefined;
+    // const ws = .{ .msg = std.Io.Writer.fixed(&buf.msg), .ctrl = std.Io.Writer.fixed(&buf.ctrl) };
+    const data = Connection.Msg{ .msg = try alloc.alloc(u8, len.msg), .ctrl = try alloc.alloc(u8, len.ctrl) };
+    var mem = .{ .msg = Mem{ .mem = data.msg }, .ctrl = Mem{ .mem = data.ctrl } };
     mem.msg.push(Header, .{
         .object_id = sender.id,
         .opcode = meta.opcode(@TypeOf(msg)),
@@ -87,131 +199,22 @@ pub fn send(socket: std.posix.socket_t, alloc: std.mem.Allocator, sender: anytyp
         std.debug.assert(mem.msg.mem.len == 0);
         std.debug.assert(mem.ctrl.mem.len == 0);
     }
-    // std.debug.print("`{x}` `{x}`\n", .{ data[0], data[1] });
-
-    const iovec = try alloc.alloc(std.posix.iovec_const, 1);
-    iovec[0] = .{ .base = data[0].ptr, .len = data[0].len };
-    const msghdr = try alloc.alloc(std.posix.msghdr_const, 1);
-    msghdr[0] = std.posix.msghdr_const{
-        .name = null,
-        .namelen = 0,
-        .iov = iovec.ptr,
-        .iovlen = iovec.len,
-        .control = data[1].ptr,
-        .controllen = data[1].len,
-        .flags = 0,
-    };
-    // std.debug.print("ctrl: [{s}]", .{});
-    if (std.os.linux.sendmsg(socket, &msghdr[0], 0) < len.msg)
-        @panic("Impossible");
+    const conn = Connection.init(socket);
+    try conn.send(data);
 }
 
 const Env = struct {
-    env: [64]meta.TypeId, // Maps id to TypeId
+    env: [64]meta.Index(.interface), // Maps id to TypeId
     id: u32,
     fn init() @This() {
         return .{ .id = 0, .env = undefined };
     }
     fn new(self: *@This(), X: type) X {
         self.id += 1;
-        self.env[self.id] = meta.typeId(X);
+        self.env[self.id] = comptime meta.index(.interface, X).?;
         return .{ .id = self.id };
     }
 };
-const Read = struct { type_id: meta.TypeId, bytes: []u8 };
-
-pub fn readOp(alloc: std.mem.Allocator, Op: type, mem: anytype) !Read {
-    var op: Op = undefined;
-    inline for (@typeInfo(Op).@"struct".fields) |field| {
-        switch (field.type) {
-            i32, u32 => @field(op, field.name) = mem.msg.readT(field.type),
-            []const u8 => {
-                const len = mem.msg.readT(u32);
-                @field(op, field.name) = try alloc.dupe(u8, mem.msg.read(len - 1));
-                _ = mem.msg.read(Mem.aligned(len) - len + 1);
-            },
-            // way.array => {
-            //     const len = mem.msg.readT(u32);
-            //     @field(op, field.name) = .{ .data = mem.msg.read(len) };
-            //     _ = mem.msg.read(Mem.aligned(len) - len);
-            // },
-            way.fd => {
-                _ = mem.ctrl.readT(u64);
-                _ = mem.ctrl.readT(i32); // std.posix.SOL.SOCKET
-                _ = mem.ctrl.readT(i32); // 0x01
-                @field(op, field.name) = .{ .fd = mem.ctrl.readT(i32) };
-            },
-            inline else => |X| if (comptime @hasDecl(X, "Protocol")) {
-                @panic("ToDoInterface");
-            } else if (comptime @hasDecl(X, "Interface")) {
-                @field(op, field.name) = mem.msg.readT(field.type);
-            } else @compileError(@typeName(X) ++ " is not readable"),
-        }
-    }
-    const alignment = comptime std.mem.Alignment.of(Op);
-    const bytes = try alloc.alignedAlloc(u8, alignment, @sizeOf(Op));
-    @memcpy(bytes, @as([*]const u8, @ptrCast(&op))[0..@sizeOf(Op)]);
-    return .{ .type_id = meta.typeId(Op), .bytes = bytes };
-}
-pub fn read(alloc: std.mem.Allocator, env: *Env, socket: std.posix.socket_t) ![]Read {
-    var buf = struct { msg: [1024]u8, ctrl: [1024]u8 }{ .msg = undefined, .ctrl = undefined };
-    var msg_iov = [_]std.posix.iovec{.{ .base = &buf.msg, .len = buf.msg.len }};
-    var msg_hdr = std.posix.msghdr{
-        .name = null,
-        .namelen = 0,
-        .iov = &msg_iov,
-        .iovlen = msg_iov.len,
-        .control = &buf.ctrl,
-        .controllen = buf.ctrl.len,
-        .flags = 0,
-    };
-
-    var msgs = std.ArrayList(Read).empty;
-    const Mode = enum { readHeader, readMsg };
-    var mode = Mode.readHeader;
-    var header: Header = undefined;
-    const Mem2 = struct { msg: Mem, ctrl: Mem };
-    var mem = Mem2{ .msg = .{ .mem = "" }, .ctrl = .{ .mem = "" } };
-    while (true) {
-        const len: isize = @bitCast(std.os.linux.recvmsg(socket, &msg_hdr, std.os.linux.MSG.DONTWAIT));
-        const WOULDBLOCK: isize = -11;
-        if (len == WOULDBLOCK) break else if (len < 0) return error.recvmsg;
-        if (len == 0) break;
-        const data = try alloc.alloc(u8, mem.msg.mem.len + @abs(len));
-        @memcpy(data[0..mem.msg.mem.len], mem.msg.mem);
-        @memcpy(data[mem.msg.mem.len..], buf.msg[0..@abs(len)]);
-        mem.msg.mem = data;
-        mem.ctrl.mem = buf.ctrl[0..msg_hdr.controllen];
-        while (true) switch (mode) {
-            .readHeader => {
-                if (mem.msg.mem.len < @sizeOf(Header)) break;
-                header = mem.msg.readT(Header);
-                mode = .readMsg;
-            },
-            .readMsg => {
-                if (mem.msg.mem.len + @sizeOf(Header) < header.size) break;
-                const msg = x: {
-                    inline for (@typeInfo(way.wayland).@"struct".decls) |d| {
-                        const X = @field(way.wayland, d.name);
-                        if (meta.typeId(X) == env.env[header.object_id]) {
-                            const ops = @typeInfo(X.Event).@"struct".decls;
-                            if (ops.len != 0) {
-                                switch (header.opcode) {
-                                    ops.len...std.math.maxInt(@TypeOf(header.opcode)) => unreachable,
-                                    inline else => |op_id| break :x try readOp(alloc, @field(X.Event, ops[op_id].name), &mem),
-                                }
-                            }
-                        }
-                    }
-                    break :x null;
-                };
-                if (msg) |m| try msgs.append(alloc, m);
-                mode = .readHeader;
-            },
-        };
-    }
-    return msgs.items;
-}
 
 fn init_display(pInit: std.process.Init) !std.posix.socket_t {
     const display_path = try x: {
@@ -258,12 +261,15 @@ pub fn main(init: std.process.Init) !void {
     try send(soc, alloc, display, way.wayland.wl_display.Request.get_registry{ .registry = registry });
     try send(soc, alloc, display, way.wayland.wl_display.Request.sync{ .callback = wl_callback });
     try std.Io.sleep(init.io, .fromMilliseconds(200), .real); // too fast otherwise
-    const rs = try read(alloc, &env, soc);
-    for (rs) |r| switch (r.type_id) {
-        meta.typeId(way.wayland.wl_registry.Event.global) => {
+    // const rs = try read(alloc, &env, soc);
+    var con = Connection.init(soc);
+    var rs = MsgIt.init((try con.recv()).?);
+    while (rs.next(alloc, &env)) |r| switch (r.type_id.val) {
+        meta.index(.event, way.wayland.wl_registry.Event.global).?.val => {
             const x: *way.wayland.wl_registry.Event.global = @ptrCast(@alignCast(r.bytes));
             std.debug.print("global name: {} version: {} interface: {s}\n", .{ x.name, x.version, x.interface });
         },
-        else => std.debug.print("Ignored Msg\n", .{}),
+        meta.lists.events.types.len...std.math.maxInt(usize) => unreachable,
+        inline else => |i| std.debug.print("Ignored Msg {s}\n", .{@typeName(meta.lists.events.types[i])}),
     };
 }

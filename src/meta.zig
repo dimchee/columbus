@@ -1,15 +1,6 @@
 const std = @import("std");
 const way = @import("wayland.zig");
 
-pub const TypeId = *const struct { _: u8 };
-pub inline fn typeId(comptime T: type) TypeId {
-    return &struct {
-        comptime {
-            _ = T;
-        }
-        var id: @typeInfo(TypeId).pointer.child = undefined;
-    }.id;
-}
 const Kind = enum { interface, request, event, @"enum" };
 pub fn TypeMap(Val: type, types: []const type) type {
     const field_names = y: {
@@ -23,14 +14,15 @@ pub fn TypeMap(Val: type, types: []const type) type {
 pub fn getVal(Key: type, Val: type, map: anytype) ?Val {
     return if (@hasField(@TypeOf(map), @typeName(Key))) @field(map, @typeName(Key)) else null;
 }
-pub fn mapTypeIndex(field_types: []const type) TypeMap(usize, field_types) {
-    return x: {
-        var sol: TypeMap(usize, field_types) = undefined;
-        for (field_types, 0..) |ft, i| @field(sol, @typeName(ft)) = i;
-        break :x sol;
-    };
+pub fn Index(_: Kind) type {
+    return packed struct { val: usize };
 }
-const lists = struct {
+pub fn mapTypeIndex(k: Kind, field_types: []const type) TypeMap(Index(k), field_types) {
+    var sol: TypeMap(Index(k), field_types) = undefined;
+    for (field_types, 0..) |ft, i| @field(sol, @typeName(ft)) = .{ .val = i };
+    return sol;
+}
+pub const lists = struct {
     fn get(name: []const u8) struct { types: []const type, opCodes: []const usize } {
         const len = x: {
             var len = 0;
@@ -52,7 +44,7 @@ const lists = struct {
         };
         return .{ .types = &sol.ts, .opCodes = &sol.cs };
     }
-    const interfaces = x: {
+    pub const interfaces = x: {
         const protocol = @typeInfo(way.wayland);
         const len = protocol.@"struct".decls.len;
         var sol: [len]type = undefined;
@@ -60,26 +52,26 @@ const lists = struct {
             sol[i] = @field(way.wayland, interface.name);
         break :x sol;
     };
-    const enums = get("Enum");
-    const events = get("Event");
-    const requests = get("Request");
+    pub const enums = get("Enum");
+    pub const events = get("Event");
+    pub const requests = get("Request");
 };
 const maps = struct {
-    const interface = mapTypeIndex(&lists.interfaces);
-    const @"enum" = mapTypeIndex(lists.enums.types);
-    const event = mapTypeIndex(lists.events.types);
-    const request = mapTypeIndex(lists.requests.types);
+    const interface = mapTypeIndex(.interface, &lists.interfaces);
+    const @"enum" = mapTypeIndex(.@"enum", lists.enums.types);
+    const event = mapTypeIndex(.event, lists.events.types);
+    const request = mapTypeIndex(.request, lists.requests.types);
 };
-pub fn index(k: Kind, T: type) ?usize {
+pub fn index(k: Kind, T: type) ?Index(k) {
     if (!@inComptime()) @compileError("meta available at comptime only!");
-    return getVal(T, usize, @field(maps, @tagName(k)));
+    return getVal(T, Index(k), @field(maps, @tagName(k)));
 }
 pub fn is(k: Kind, T: type) bool {
     return index(k, T) != null;
 }
 pub fn opcode(T: type) comptime_int {
-    if (is(.event, T)) return lists.events.opCodes[index(.event, T).?];
-    if (is(.request, T)) return lists.requests.opCodes[index(.request, T).?];
+    if (is(.event, T)) return lists.events.opCodes[index(.event, T).?.val];
+    if (is(.request, T)) return lists.requests.opCodes[index(.request, T).?.val];
     @compileError("Opcode is available for events and requests only!");
 }
 
