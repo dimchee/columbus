@@ -45,11 +45,22 @@ pub const lists = struct {
         return .{ .types = &sol.ts, .opCodes = &sol.cs };
     }
     pub const interfaces = x: {
-        const protocol = @typeInfo(way.wayland);
-        const len = protocol.@"struct".decls.len;
+        const len = y: {
+            var len = 0;
+            for (@typeInfo(way.protocol).@"struct".decls) |p| {
+                const protocol = @typeInfo(@field(way.protocol, p.name));
+                len += protocol.@"struct".decls.len;
+            }
+            break :y len;
+        };
         var sol: [len]type = undefined;
-        for (protocol.@"struct".decls, 0..) |interface, i|
-            sol[i] = @field(way.wayland, interface.name);
+        var cur = 0;
+        for (@typeInfo(way.protocol).@"struct".decls) |p| {
+            const protocol = @field(way.protocol, p.name);
+            for (@typeInfo(protocol).@"struct".decls, 0..) |interface, i|
+                sol[cur + i] = @field(protocol, interface.name);
+            cur += @typeInfo(protocol).@"struct".decls.len;
+        }
         break :x sol;
     };
     pub const enums = get("Enum");

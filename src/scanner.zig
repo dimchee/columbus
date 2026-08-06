@@ -144,11 +144,16 @@ fn getType(alloc: std.mem.Allocator, x: Interface.Msg.Arg) ![]const u8 {
 pub fn main(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
 
-    const parsed = try Parsed.init(init, &[_][]const u8{"spec/wayland.json"});
+    const parsed = try Parsed.init(init, &[_][]const u8{
+        "spec/wayland.json",
+        "spec/xdg-shell.json",
+        // "spec/linux-dmabuf.json",
+    });
     defer parsed.deinit();
     var w = try Wrapper.init(init.io, "src/wayland.zig");
     defer w.deinit();
     try w.print("pub const types = @import(\"types.zig\");", .{});
+    try w.begin("protocol");
     for (parsed.protocols) |protocol| {
         try w.begin(protocol.name);
         for (protocol.interface) |interface| {
@@ -163,20 +168,18 @@ pub fn main(init: std.process.Init) !void {
             }
             try w.end();
             try w.begin("Event");
-            for (interface.event.data, 0..) |e, opcode| {
+            for (interface.event.data) |e| {
                 try w.begin(e.name);
                 try w.addConst("Interface", interface.name);
-                try w.print("pub const Opcode = {};", .{opcode});
                 for (e.arg.data) |a|
                     try w.print("{s}: {s},", .{ a.name, try getType(alloc, a) });
                 try w.end();
             }
             try w.end();
             try w.begin("Request");
-            for (interface.request.data, 0..) |e, opcode| {
+            for (interface.request.data) |e| {
                 try w.begin(e.name);
                 try w.addConst("Interface", interface.name);
-                try w.print("pub const Opcode = {};", .{opcode});
                 for (e.arg.data) |a|
                     try w.print("{s}: {s},", .{ a.name, try getType(alloc, a) });
                 try w.end();
@@ -186,4 +189,5 @@ pub fn main(init: std.process.Init) !void {
         }
         try w.end();
     }
+    try w.end();
 }
