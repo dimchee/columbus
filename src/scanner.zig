@@ -124,14 +124,14 @@ const Wrapper = struct {
 
 fn getType(alloc: std.mem.Allocator, x: Interface.Msg.Arg) ![]const u8 {
     return switch (x.type) {
-        .array => "[]const u8", // Should be wrapped?
+        .array => "types.array", // Should be wrapped?
         .fixed => "i32", // Signed 24.8 decimal numbers
-        .fd => "fd", //"std.posix.fd_t",
+        .fd => "types.fd", //"std.posix.fd_t",
         .int => "i32",
         // maybe use wl_registry.global as any?
-        .new_id => x.interface orelse "any",
+        .new_id => x.interface orelse "types.any",
         .object => "u32", // id of object
-        .string => "[]const u8",
+        .string => "types.str",
         .uint => if (x.@"enum") |e| sol: {
             var it = std.mem.splitBackwardsScalar(u8, e, '.');
             const name = it.next().?;
@@ -148,8 +148,7 @@ pub fn main(init: std.process.Init) !void {
     defer parsed.deinit();
     var w = try Wrapper.init(init.io, "src/wayland.zig");
     defer w.deinit();
-    try w.print("pub const any = struct {{ interface: []const u8, version: u32, id: u32 }};", .{});
-    try w.print("pub const fd = struct {{ fd: i32 }};", .{});
+    try w.print("pub const types = @import(\"types.zig\");", .{});
     for (parsed.protocols) |protocol| {
         try w.begin(protocol.name);
         for (protocol.interface) |interface| {
