@@ -40,8 +40,8 @@ pub fn send(self: *@This()) void {
             .namelen = 0,
             .iov = &.{ .{ .base = x.main.ptr, .len = x.main.len }, .{ .base = x.wrap.ptr, .len = x.wrap.len } },
             .iovlen = 1,
-            .control = null,
-            .controllen = 0,
+            .control = &self.io.sender.ctrl,
+            .controllen = self.io.sender.ctrl_len,
             .flags = 0,
         }, 0);
         _ = self.io.sender.msg.getN(sent);
@@ -74,10 +74,11 @@ pub fn aligned(len: u64) u16 {
 }
 const Header = extern struct { object_id: u32, opcode: u16, size: u16 };
 const Sender = struct {
-    msg: rb.RingBuffer(1 << 6), // WL_BUFFER_DEFAULT_SIZE_POT = 12, WL_BUFFER_DEFAULT_MAX_SIZE = (1 << WL_BUFFER_DEFAULT_SIZE_POT)
+    msg: rb.RingBuffer(1 << 12), // WL_BUFFER_DEFAULT_SIZE_POT = 12, WL_BUFFER_DEFAULT_MAX_SIZE = (1 << WL_BUFFER_DEFAULT_SIZE_POT)
     ctrl: [1024]u8,
+    ctrl_len: usize,
     fn init() @This() {
-        return .{ .msg = .init(), .ctrl = undefined };
+        return .{ .msg = .init(), .ctrl = undefined, .ctrl_len = 0 };
     }
     pub fn pushStr(self: *@This(), str: types.str) void {
         const len = str.len();
@@ -96,6 +97,18 @@ const Sender = struct {
             switch (field.type) {
                 i32, u32 => self.msg.putT(field.type, f),
                 types.str => self.pushStr(f),
+                types.fd => {
+                    // @panic("TodoFD");
+                    const SCM_RIGHTS = 0x01; // from <bits/socket.h> in <sys/socket.h>
+                    const FD = extern struct { size: u64 align(4), sol: i32, rights: i32, fd: std.posix.fd_t };
+                    @memcpy(self.ctrl[0..@sizeOf(FD)], @as([]const u8, @ptrCast(&FD{
+                        .size = @sizeOf(FD),
+                        .sol = std.posix.SOL.SOCKET,
+                        .rights = SCM_RIGHTS,
+                        .fd = f.fd,
+                    })));
+                    self.ctrl_len += @sizeOf(FD);
+                },
                 types.any => {
                     self.pushStr(f.interface);
                     self.msg.putT(u32, f.version);
@@ -116,7 +129,7 @@ const Sender = struct {
     }
 };
 const Recver = struct {
-    msg: rb.RingBuffer(1 << 6), // WL_BUFFER_DEFAULT_SIZE_POT = 12, WL_BUFFER_DEFAULT_MAX_SIZE = (1 << WL_BUFFER_DEFAULT_SIZE_POT)
+    msg: rb.RingBuffer(1 << 12), // WL_BUFFER_DEFAULT_SIZE_POT = 12, WL_BUFFER_DEFAULT_MAX_SIZE = (1 << WL_BUFFER_DEFAULT_SIZE_POT)
     ctrl: [1024]u8,
     fn init() @This() {
         return .{ .msg = .init(), .ctrl = undefined };
@@ -128,25 +141,29 @@ const Recver = struct {
                 i32, u32 => @field(op, field.name) = self.msg.getT(field.type),
                 types.str => {
                     const len = self.msg.getT(u32);
-                    const vw = self.msg.getN(len - 1);
-                    @field(op, field.name) = .{ .main = vw.main, .wrap = vw.wrap };
-                    _ = self.msg.getN(aligned(len) - len + 1);
+                    if (len != 0) {
+                        const vw = self.msg.getN(len - 1);
+                        @field(op, field.name) = .{ .main = vw.main, .wrap = vw.wrap };
+                        _ = self.msg.getN(aligned(len) - len + 1);
+                    } else @field(op, field.name) = .{ .main = "", .wrap = "" };
                 },
                 types.array => {
                     const len = self.msg.getT(u32);
-                    const vw = self.msg.getN(len - 1);
-                    @field(op, field.name) = .{ .data = .{ .main = vw.main, .wrap = vw.wrap } };
-                    _ = self.msg.getN(aligned(len) - len + 1);
+                    if (len != 0) {
+                        const vw = self.msg.getN(len - 1);
+                        @field(op, field.name) = .{ .data = .{ .main = vw.main, .wrap = vw.wrap } };
+                        _ = self.msg.getN(aligned(len) - len + 1);
+                    } else @field(op, field.name) = .{ .data = .{ .main = "", .wrap = "" } };
                 },
                 types.fd => {
-                    _ = self.msg.getT(struct { u64, i32, i32 }); // _, std.posix.SOL.SOCKET, 0x01
+                    @panic("ToDoFD");
+                    // _ = self.msg.getT(struct { u64, i32, i32 }); // _, std.posix.SOL.SOCKET, 0x01
                     // self.msg = self.msg[@sizeOf(u64) + @sizeOf(i32) + @sizeOf(i32) ..];
                     // @field(op, field.name) = .{ .fd = self.msg.getT(i32, &self.ctrl) }; // TODO not handling ctrl
                 },
                 inline else => |X| switch (comptime meta.getKind(X)) {
                     .interface => @panic("ToDoInterface"),
-                    .@"enum" => @panic("ToDoEnum"),
-                    // @field(op, field.name) = self.msg.getT(field.type, &self.msg);
+                    .@"enum" => @field(op, field.name) = self.msg.getT(field.type),
                     else => @compileError(@typeName(X) ++ " is not readable"),
                 },
             }

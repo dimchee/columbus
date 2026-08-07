@@ -109,12 +109,9 @@ const Wrapper = struct {
         try self.out.interface.print(fmt, args);
         try self.out.interface.print("\n", .{});
     }
-    fn begin(self: *@This(), name: []const u8) !void {
-        try self.print("pub const {s} = struct {{", .{mod(name)});
+    fn begin(self: *@This(), what: []const u8, name: []const u8) !void {
+        try self.print("pub const {s} = {s} {{", .{ mod(name), what });
         self.indent += 4;
-    }
-    fn addConst(self: *@This(), name: []const u8, value: []const u8) !void {
-        try self.print("pub const {s} = {s};", .{ name, mod(value) });
     }
     fn end(self: *@This()) !void {
         self.indent -= 4;
@@ -122,27 +119,43 @@ const Wrapper = struct {
     }
 };
 
-fn getType(alloc: std.mem.Allocator, x: Interface.Msg.Arg) ![]const u8 {
-    return switch (x.type) {
-        .array => "types.array", // Should be wrapped?
-        .fixed => "i32", // Signed 24.8 decimal numbers
-        .fd => "types.fd", //"std.posix.fd_t",
-        .int => "i32",
-        // maybe use wl_registry.global as any?
-        .new_id => x.interface orelse "types.any",
-        .object => "u32", // id of object
-        .string => "types.str",
-        .uint => if (x.@"enum") |e| sol: {
-            var it = std.mem.splitBackwardsScalar(u8, e, '.');
-            const name = it.next().?;
-            const mI = it.next();
-            break :sol try std.fmt.allocPrint(alloc, "{s}.{s}.{s}", .{ mI orelse "Interface", "Enum", name });
-        } else "u32",
-    };
-}
+const Normalizer = struct {
+    alloc: std.mem.Allocator,
+    fn init(alloc: std.mem.Allocator) @This() {
+        return .{ .alloc = alloc };
+    }
+    fn get(self: @This(), str: []const u8) ![]const u8 {
+        return switch (str[0]) {
+            '0'...'9' => std.fmt.allocPrint(self.alloc, "@\"{s}\"", .{str}),
+            else => str,
+        };
+    }
+    fn getType(self: @This(), x: Interface.Msg.Arg) ![]const u8 {
+        return switch (x.type) {
+            .array => "types.array", // Should be wrapped?
+            .fixed => "i32", // Signed 24.8 decimal numbers
+            .fd => "types.fd", //"std.posix.fd_t",
+            .int => "i32",
+            // maybe use wl_registry.global as any?
+            .new_id => x.interface orelse "types.any",
+            .object => "u32", // id of object
+            .string => "types.str",
+            .uint => if (x.@"enum") |e| sol: {
+                var it = std.mem.splitBackwardsScalar(u8, e, '.');
+                const name = it.next().?;
+                break :sol try if (it.next()) |i|
+                    std.fmt.allocPrint(self.alloc, "{s}.Enum.{s}", .{ i, name })
+                else
+                    std.fmt.allocPrint(self.alloc, "Enum.{s}", .{name});
+                // break :sol try std.fmt.allocPrint(alloc, "{s}.{s}.{s}", .{ mI orelse "Interface", "Enum", name });
+            } else "u32",
+        };
+    }
+};
 
 pub fn main(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
+    const nz = Normalizer.init(alloc);
 
     const parsed = try Parsed.init(init, &[_][]const u8{
         "spec/wayland.json",
@@ -153,35 +166,35 @@ pub fn main(init: std.process.Init) !void {
     var w = try Wrapper.init(init.io, "src/wayland.zig");
     defer w.deinit();
     try w.print("pub const types = @import(\"types.zig\");", .{});
-    try w.begin("protocol");
+    try w.begin("struct", "protocol");
     for (parsed.protocols) |protocol| {
-        try w.begin(protocol.name);
+        try w.begin("struct", protocol.name);
         for (protocol.interface) |interface| {
-            try w.begin(interface.name);
-            try w.addConst("Protocol", protocol.name);
+            try w.begin("struct", interface.name);
             try w.print("id: u32,", .{});
-            try w.begin("Enum");
+            try w.begin("struct", "Enum");
             for (interface.@"enum".data) |e| {
-                try w.begin(e.name);
-                try w.addConst("Interface", interface.name);
+                try w.begin("enum(u32)", e.name);
+                for (e.entry.data) |a|
+                    try w.print("{s} = {s},", .{ try nz.get(a.name), a.value });
+
+                try w.print("_, // NonExaustive, see  `wl_seat.Enum.capability`", .{}); // ToDo some are exaustive
                 try w.end();
             }
             try w.end();
-            try w.begin("Event");
+            try w.begin("struct", "Event");
             for (interface.event.data) |e| {
-                try w.begin(e.name);
-                try w.addConst("Interface", interface.name);
+                try w.begin("struct", e.name);
                 for (e.arg.data) |a|
-                    try w.print("{s}: {s},", .{ a.name, try getType(alloc, a) });
+                    try w.print("{s}: {s},", .{ a.name, try nz.getType(a) });
                 try w.end();
             }
             try w.end();
-            try w.begin("Request");
+            try w.begin("struct", "Request");
             for (interface.request.data) |e| {
-                try w.begin(e.name);
-                try w.addConst("Interface", interface.name);
+                try w.begin("struct", e.name);
                 for (e.arg.data) |a|
-                    try w.print("{s}: {s},", .{ a.name, try getType(alloc, a) });
+                    try w.print("{s}: {s},", .{ a.name, try nz.getType(a) });
                 try w.end();
             }
             try w.end();
