@@ -68,15 +68,15 @@ pub inline fn conf_input(Op: type, x: Op, args: anytype) bool {
         way.wl_seat.Event.name => std.debug.print("Seat name: {f}\n", .{x.name}),
         way.wl_seat.Event.capabilities => {
             std.debug.print("In capabilities\n", .{});
-            if (@intFromEnum(x.capabilities) & @intFromEnum(way.wl_seat.Enum.capability.keyboard) != 0) {
+            if (x.capabilities.keyboard) {
                 std.debug.print("keyboard\n", .{});
                 args.con.io.sender.push(args.wl_seat, way.wl_seat.Request.get_keyboard{ .id = args.wl_keyboard });
             }
-            if (@intFromEnum(x.capabilities) & @intFromEnum(way.wl_seat.Enum.capability.pointer) != 0) {
+            if (x.capabilities.pointer) {
                 std.debug.print("pointer\n", .{});
                 args.con.io.sender.push(args.wl_seat, way.wl_seat.Request.get_pointer{ .id = args.wl_pointer });
             }
-            if (@intFromEnum(x.capabilities) & @intFromEnum(way.wl_seat.Enum.capability.touch) != 0) {
+            if (x.capabilities.touch) {
                 std.debug.print("touch\n", .{});
             }
         },

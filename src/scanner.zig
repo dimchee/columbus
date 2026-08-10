@@ -17,6 +17,33 @@ pub fn OptionalList(comptime T: type) type {
         }
     };
 }
+pub const Bool = struct {
+    val: bool,
+    pub fn jsonParse(alloc: std.mem.Allocator, source: anytype, _: std.json.ParseOptions) !@This() {
+        switch (try source.nextAlloc(alloc, .alloc_if_needed)) {
+            .string => |str| {
+                if (std.mem.eql(u8, str, "true")) return .{ .val = true };
+                if (std.mem.eql(u8, str, "false")) return .{ .val = false };
+                return error.SyntaxError;
+            },
+            else => return error.SyntaxError,
+        }
+    }
+};
+
+pub const EnumVal = struct {
+    val: u32,
+    pub fn jsonParse(alloc: std.mem.Allocator, source: anytype, _: std.json.ParseOptions) !@This() {
+        return switch (try source.nextAlloc(alloc, .alloc_if_needed)) {
+            .string => |str| .{ .val = try std.fmt.parseInt(u32, str, 0) },
+            else => error.SyntaxError,
+        };
+    }
+    inline fn isPow2(self: @This()) bool {
+        return self.val != 0 and (self.val & (self.val - 1)) == 0;
+    }
+};
+
 pub const Root = struct {
     protocol: Protocol,
 };
@@ -35,11 +62,11 @@ pub const Interface = struct {
         pub const Entry = struct {
             name: []const u8,
             summary: ?[]const u8 = null,
-            value: []const u8, // ToDo parse integers
+            value: EnumVal,
         };
         name: []const u8,
         description: ?Description = null,
-        bitfield: []const u8 = "false", // ToDo use bitfields
+        bitfield: Bool = .{ .val = false },
         entry: OptionalList(Entry),
     };
     const Msg = struct {
@@ -173,14 +200,28 @@ pub fn main(init: std.process.Init) !void {
             try w.begin("struct", interface.name);
             try w.print("id: u32,", .{});
             try w.begin("struct", "Enum");
-            for (interface.@"enum".data) |e| {
+            for (interface.@"enum".data) |e| if (e.bitfield.val) {
+                var head: usize = 0;
+                for (e.entry.data, 0..) |a, i| if (a.value.isPow2()) {
+                    std.mem.swap(Interface.Enum.Entry, &e.entry.data[head], &e.entry.data[i]);
+                    head += 1;
+                };
+                for (e.entry.data[0..head], 0..) |a, i|
+                    if (a.value.val != std.math.pow(u32, 2, @intCast(i)))
+                        std.debug.print("Problem: {s}\n", .{interface.name});
+                try w.begin("packed struct(u32)", e.name);
+                for (e.entry.data[0..head]) |a|
+                    try w.print("{s}: bool = false, // {}", .{ try nz.get(a.name), a.value.val });
+                try w.print("reserved: u{} = 0, // protocol padding", .{32 - head});
+                for (e.entry.data[head..e.entry.data.len]) |a|
+                    try w.print("const {s}: @This() = {};", .{ try nz.get(a.name), a.value.val });
+                try w.end();
+            } else {
                 try w.begin("enum(u32)", e.name);
                 for (e.entry.data) |a|
-                    try w.print("{s} = {s},", .{ try nz.get(a.name), a.value });
-
-                try w.print("_, // NonExaustive, see  `wl_seat.Enum.capability`", .{}); // ToDo some are exaustive
+                    try w.print("{s} = {},", .{ try nz.get(a.name), a.value.val });
                 try w.end();
-            }
+            };
             try w.end();
             try w.begin("struct", "Event");
             for (interface.event.data) |e| {
