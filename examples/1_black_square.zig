@@ -5,27 +5,6 @@ const xdg_shell = clb.way.protocol.xdg_shell;
 const meta = clb.meta;
 const types = clb.way.types;
 
-const Registry = struct {
-    con: *clb.Connection,
-    registry: way.wl_registry,
-    pub fn init(con: *clb.Connection, registry: way.wl_registry) @This() {
-        return .{ .con = con, .registry = registry };
-    }
-    pub fn interface_bind(self: *@This(), x: way.wl_registry.Event.global, name: []const u8, version: u32, id: u32) void {
-        if (x.interface.eql(name)) {
-            self.con.io.sender.push(self.registry, way.wl_registry.Request.bind{
-                .name = x.name,
-                .id = types.any{
-                    .interface = types.str.fromStr(name),
-                    .version = version,
-                    .id = id,
-                },
-            });
-            self.con.send();
-        }
-    }
-};
-
 pub fn main(init: std.process.Init) !void {
     var env = clb.Env.init();
     const display = env.new(way.wl_display);
@@ -35,7 +14,7 @@ pub fn main(init: std.process.Init) !void {
     con.io.sender.push(display, way.wl_display.Request.get_registry{ .registry = registry });
     con.io.sender.push(display, way.wl_display.Request.sync{ .callback = wl_callback });
     con.send();
-    var reg = Registry.init(&con, registry);
+    var reg = clb.RegistryBinder.init(&con, registry);
 
     const wl_compositor = env.new(way.wl_compositor);
     const wl_shm = env.new(way.wl_shm);
@@ -134,7 +113,7 @@ pub fn main(init: std.process.Init) !void {
     con.send();
 
     loop: while (true) {
-        try std.Io.sleep(init.io, .fromMilliseconds(50), .real); // too fast otherwise
+        try std.Io.sleep(init.io, .fromMilliseconds(160), .real); // too fast otherwise
         con.recv();
         while (con.io.recver.popHeader(&env.env)) |t_id| switch (t_id.val) {
             meta.lists.events.types.len...std.math.maxInt(usize) => unreachable,

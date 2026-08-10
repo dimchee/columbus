@@ -2,7 +2,6 @@ const std = @import("std");
 const rb = @import("ringbuffer.zig");
 const types = @import("types.zig");
 const meta = @import("meta.zig");
-// std.Io.Writer.fixed
 io: struct { recver: Recver, sender: Sender },
 socket: std.posix.socket_t,
 pub fn initDefault(pInit: std.process.Init) !@This() {
@@ -48,7 +47,7 @@ pub fn send(self: *@This()) void {
     }
 }
 /// This function invalidates last recv msgs
-pub fn recv(self: *@This()) void {
+pub fn recv(self: *@This()) !void {
     const x = self.io.recver.msg.free();
     var msg_iov = [_]std.posix.iovec{ .{ .base = x.main.ptr, .len = x.main.len }, .{ .base = x.wrap.ptr, .len = x.wrap.len } };
     var msg_hdr = std.posix.msghdr{
@@ -63,18 +62,17 @@ pub fn recv(self: *@This()) void {
     // TODO if msg overflows (`len == buf.msg.len`), read again
     const len = std.os.linux.recvmsg(self.socket, &msg_hdr, std.os.linux.MSG.DONTWAIT);
     const WOULDBLOCK: usize = @bitCast(@as(isize, -11)); // TODO does it work?
-    if (len == WOULDBLOCK) {
-        std.debug.print("wouldblock?\n", .{});
-        return;
-    }
+    if (len == WOULDBLOCK) return error.wouldBlock;
     self.io.recver.msg.putN(len);
 }
 pub fn aligned(len: u64) u16 {
     return std.mem.alignForward(u16, @intCast(len), @sizeOf(u32));
 }
 const Header = extern struct { object_id: u32, opcode: u16, size: u16 };
+const FD = extern struct { size: u64 align(4), sol: i32, rights: i32, fd: std.posix.fd_t };
 const Sender = struct {
     msg: rb.RingBuffer(1 << 12), // WL_BUFFER_DEFAULT_SIZE_POT = 12, WL_BUFFER_DEFAULT_MAX_SIZE = (1 << WL_BUFFER_DEFAULT_SIZE_POT)
+    // TODO Not sure if this ctrl representation works, should check
     ctrl: [1024]u8,
     ctrl_len: usize,
     fn init() @This() {
@@ -100,7 +98,6 @@ const Sender = struct {
                 types.fd => {
                     // @panic("TodoFD");
                     const SCM_RIGHTS = 0x01; // from <bits/socket.h> in <sys/socket.h>
-                    const FD = extern struct { size: u64 align(4), sol: i32, rights: i32, fd: std.posix.fd_t };
                     @memcpy(self.ctrl[0..@sizeOf(FD)], @as([]const u8, @ptrCast(&FD{
                         .size = @sizeOf(FD),
                         .sol = std.posix.SOL.SOCKET,
@@ -156,10 +153,12 @@ const Recver = struct {
                     } else @field(op, field.name) = .{ .data = .{ .main = "", .wrap = "" } };
                 },
                 types.fd => {
-                    @panic("ToDoFD");
-                    // _ = self.msg.getT(struct { u64, i32, i32 }); // _, std.posix.SOL.SOCKET, 0x01
-                    // self.msg = self.msg[@sizeOf(u64) + @sizeOf(i32) + @sizeOf(i32) ..];
-                    // @field(op, field.name) = .{ .fd = self.msg.getT(i32, &self.ctrl) }; // TODO not handling ctrl
+                    // @panic("ToDoFD");
+                    var res: FD = undefined;
+                    @memcpy(@as([]u8, @ptrCast(&res)), self.ctrl[0..@sizeOf(FD)]);
+                    // self.ctrl_len -= @sizeOf(FD);
+                    // self.ctrl.head += @sizeOf(FD);
+                    @field(op, field.name) = .{ .fd = res.fd }; // _, std.posix.SOL.SOCKET, 0x01
                 },
                 inline else => |X| switch (comptime meta.getKind(X)) {
                     .interface => @panic("ToDoInterface"),
