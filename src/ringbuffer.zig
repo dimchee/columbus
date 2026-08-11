@@ -7,23 +7,26 @@ pub fn RingBuffer(comptime CAPACITY: usize) type {
             return .{ .data = undefined, .head = 0, .len = 0 };
         }
         pub inline fn tail(self: *const @This()) usize {
-            return @min(self.head + self.len -% self.data.len, self.head + self.len);
+            return @min(self.head + self.len -% CAPACITY, self.head + self.len);
+        }
+        pub inline fn at(self: *const @This(), ind: usize) u8 {
+            return self.data[(self.head + ind) % CAPACITY];
         }
         const View = struct { main: []u8, wrap: []u8 };
         fn view(self: *@This(), head: usize, len: usize) View {
-            return if (head + len < self.data.len)
+            return if (head + len < CAPACITY)
                 .{ .main = self.data[head .. head + len], .wrap = "" }
             else
-                .{ .main = self.data[head..self.data.len], .wrap = self.data[0 .. head + len - self.data.len] };
+                .{ .main = self.data[head..CAPACITY], .wrap = self.data[0 .. head + len - CAPACITY] };
         }
         pub fn used(self: *@This()) View {
             return self.view(self.head, self.len);
         }
         pub fn free(self: *@This()) View {
-            return self.view(self.tail(), self.data.len - self.len);
+            return self.view(self.tail(), CAPACITY - self.len);
         }
         pub fn put(self: *@This(), bytes: []const u8) void {
-            if (self.data.len < self.len + bytes.len) @panic("Can't put - RingBuffer too long");
+            if (CAPACITY < self.len + bytes.len) @panic("Can't put - RingBuffer too long");
             const str = self.view(self.tail(), bytes.len);
             @memcpy(str.main, bytes.ptr);
             if (0 < str.wrap.len) @memcpy(str.wrap, bytes[str.main.len..].ptr);
@@ -37,7 +40,7 @@ pub fn RingBuffer(comptime CAPACITY: usize) type {
         }
         pub fn get(self: *@This(), bytes: []u8) void {
             self.peek(bytes);
-            self.head = @min(self.head + bytes.len -% self.data.len, self.head + bytes.len);
+            self.head = @min(self.head + bytes.len -% CAPACITY, self.head + bytes.len);
             self.len -= bytes.len;
         }
         fn DeferedPut(T: type) type {
@@ -51,7 +54,7 @@ pub fn RingBuffer(comptime CAPACITY: usize) type {
             };
         }
         pub fn putTDefered(self: *@This(), T: type) DeferedPut(T) {
-            if (self.data.len < self.len + @sizeOf(T)) @panic("Can't put - RingBuffer too long");
+            if (CAPACITY < self.len + @sizeOf(T)) @panic("Can't put - RingBuffer too long");
             const v = self.view(self.tail(), @sizeOf(T));
             self.len += @sizeOf(T);
             return .{ .view = v };
@@ -70,14 +73,14 @@ pub fn RingBuffer(comptime CAPACITY: usize) type {
             return x;
         }
         pub fn putN(self: *@This(), n: usize) void {
-            if (self.data.len < self.len + n) @panic("Can't put - RingBuffer too long");
+            if (CAPACITY < self.len + n) @panic("Can't put - RingBuffer too long");
             self.len += n;
         }
         pub fn getN(self: *@This(), n: usize) View {
             if (self.len < n) @panic("Can't get - RingBuffer too short");
             const sol = self.view(self.head, n);
             self.len -= n;
-            self.head = @min(self.head + n -% self.data.len, self.head + n);
+            self.head = @min(self.head + n -% CAPACITY, self.head + n);
             return .{ .main = sol.main, .wrap = sol.wrap };
         }
     };

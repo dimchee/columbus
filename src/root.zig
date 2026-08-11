@@ -15,15 +15,20 @@ pub const Connection = @import("connection.zig");
 //
 
 pub const Env = struct {
-    env: [64]meta.Index(.interface), // Maps id to TypeId
-    id: u32,
+    free: rb.RingBuffer(64 * @sizeOf(u32)),
+    env: [64]meta.Index(.interface),
     pub fn init() @This() {
-        return .{ .id = 0, .env = undefined };
+        var sol = @This(){ .env = undefined, .free = .init() };
+        for (1..64) |i| sol.free.putT(u32, @intCast(i));
+        return sol;
     }
     pub fn new(self: *@This(), X: type) X {
-        self.id += 1;
-        self.env[self.id] = comptime meta.index(.interface, X).?;
-        return .{ .id = self.id };
+        const next = self.free.getT(u32);
+        self.env[next] = comptime meta.index(.interface, X).?;
+        return .{ .id = next };
+    }
+    pub fn delete(self: *@This(), i: u32) void {
+        self.free.putT(u32, i);
     }
 };
 

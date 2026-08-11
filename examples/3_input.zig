@@ -111,9 +111,12 @@ pub inline fn run(Op: type, x: Op, s: *State) bool {
     }
 
     switch (Op) {
-        way.wl_callback.Event.done => std.debug.print("Frame time: {}\n", .{x}),
+        way.wl_callback.Event.done => {
+            std.debug.print("Frame time: {}\n", .{x});
+            s.render = true;
+        },
         way.wl_display.Event.Error => std.debug.print("Error: {f}\n", .{x.message}),
-        way.wl_display.Event.delete_id => std.debug.print("ToDo: delete id {}\n", .{x}),
+        way.wl_display.Event.delete_id => s.env.delete(x.id),
         xdg_shell.xdg_toplevel.Event.close => {
             std.debug.print("Closing window!\n", .{});
             return false;
@@ -207,3 +210,4 @@ pub fn main(init: std.process.Init) !void {
     var state = State{ .fb = &fb, .wl_surface = wl_surface, .xdg_wm_base = xdg_wm_base, .env = &env, .con = &con };
     try clb.loop(init.io, &con, &env, &state, .{run}, clb.wait_for(.fromMilliseconds(16)));
 }
+// const xkb_keycode = keycode + 8;
