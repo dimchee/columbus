@@ -8,10 +8,10 @@ const types = clb.way.types;
 pub inline fn initial(Op: type, x: Op, args: anytype) bool {
     switch (Op) {
         way.wl_registry.Event.global => {
-            args.reg_binder.bind(x, "wl_compositor", 5, args.wl_compositor.id);
-            args.reg_binder.bind(x, "xdg_wm_base", 6, args.xdg_wm_base.id);
-            args.reg_binder.bind(x, "wl_shm", 1, args.wl_shm.id);
-            args.reg_binder.bind(x, "wl_seat", 8, args.wl_seat.id);
+            args.reg_binder.bind(x, way.wl_compositor, args.wl_compositor.id);
+            args.reg_binder.bind(x, xdg_shell.xdg_wm_base, args.xdg_wm_base.id);
+            args.reg_binder.bind(x, way.wl_shm, args.wl_shm.id);
+            args.reg_binder.bind(x, way.wl_seat, args.wl_seat.id);
             // std.debug.print("global name: {} version: {} interface: {f}\n", .{ x.name, x.version, x.interface });
         },
         way.wl_callback.Event.done => {
@@ -86,7 +86,7 @@ pub inline fn conf_input(Op: type, x: Op, args: anytype) bool {
 }
 
 const State = struct {
-    frame: u32 = 0,
+    frame_time: u32 = 0,
     render: bool = true,
     fb: *FrameBuf,
     wl_surface: way.wl_surface,
@@ -95,10 +95,9 @@ const State = struct {
     con: *clb.Connection,
 };
 pub inline fn run(Op: type, x: Op, s: *State) bool {
-    s.frame += 1;
     if (s.render) {
         for (0..@abs(s.fb.size[1])) |i| for (0..@abs(s.fb.size[0])) |j| {
-            s.fb.pixels[i * @abs(s.fb.size[0]) + j] = [4]u8{ @truncate(j +% s.frame), @truncate(i +% s.frame), 0xFF, 0xFF };
+            s.fb.pixels[i * @abs(s.fb.size[0]) + j] = [4]u8{ @truncate(j +% s.frame_time / 10), @truncate(i +% s.frame_time / 10), 0xFF, 0xFF };
         };
         const frame_callback = s.env.new(way.wl_callback);
 
@@ -112,7 +111,8 @@ pub inline fn run(Op: type, x: Op, s: *State) bool {
 
     switch (Op) {
         way.wl_callback.Event.done => {
-            std.debug.print("Frame time: {}\n", .{x});
+            // std.debug.print("Frame time: {s}{}\n", .{ @typeName(Op), x });
+            s.frame_time = x.callback_data;
             s.render = true;
         },
         way.wl_display.Event.Error => std.debug.print("Error: {f}\n", .{x.message}),

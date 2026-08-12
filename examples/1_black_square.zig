@@ -25,9 +25,9 @@ pub fn main(init: std.process.Init) !void {
         while (con.io.recver.popHeader(&env.env)) |t_id| switch (t_id.val) {
             meta.index(.event, way.wl_registry.Event.global).?.val => {
                 const x = con.io.recver.popOp(way.wl_registry.Event.global);
-                reg.interface_bind(x, "wl_compositor", 5, wl_compositor.id);
-                reg.interface_bind(x, "xdg_wm_base", 6, xdg_wm_base.id);
-                reg.interface_bind(x, "wl_shm", 1, wl_shm.id);
+                reg.bind(x, way.wl_compositor, wl_compositor.id);
+                reg.bind(x, xdg_shell.xdg_wm_base, xdg_wm_base.id);
+                reg.bind(x, way.wl_shm, wl_shm.id);
                 // std.debug.print("global name: {} version: {} interface: {f}\n", .{ x.name, x.version, x.interface });
             },
             meta.index(.event, way.wl_callback.Event.done).?.val => {

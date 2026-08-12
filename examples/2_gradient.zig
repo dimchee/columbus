@@ -8,9 +8,9 @@ const types = clb.way.types;
 pub inline fn initial(Op: type, x: Op, args: anytype) bool {
     switch (Op) {
         way.wl_registry.Event.global => {
-            args.reg_binder.bind(x, "wl_compositor", 5, args.wl_compositor.id);
-            args.reg_binder.bind(x, "xdg_wm_base", 6, args.xdg_wm_base.id);
-            args.reg_binder.bind(x, "wl_shm", 1, args.wl_shm.id);
+            args.reg_binder.bind(x, way.wl_compositor, args.wl_compositor.id);
+            args.reg_binder.bind(x, xdg_shell.xdg_wm_base, args.xdg_wm_base.id);
+            args.reg_binder.bind(x, way.wl_shm, args.wl_shm.id);
             // std.debug.print("global name: {} version: {} interface: {f}\n", .{ x.name, x.version, x.interface });
         },
         way.wl_callback.Event.done => {

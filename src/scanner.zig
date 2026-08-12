@@ -198,6 +198,7 @@ pub fn main(init: std.process.Init) !void {
         try w.begin("struct", protocol.name);
         for (protocol.interface) |interface| {
             try w.begin("struct", interface.name);
+            try w.print("pub const Version = {s};", .{interface.version});
             try w.print("id: u32,", .{});
             try w.begin("struct", "Enum");
             for (interface.@"enum".data) |e| if (e.bitfield.val) {
@@ -214,7 +215,7 @@ pub fn main(init: std.process.Init) !void {
                     try w.print("{s}: bool = false, // {}", .{ try nz.get(a.name), a.value.val });
                 try w.print("reserved: u{} = 0, // protocol padding", .{32 - head});
                 for (e.entry.data[head..e.entry.data.len]) |a|
-                    try w.print("const {s}: @This() = {};", .{ try nz.get(a.name), a.value.val });
+                    try w.print("pub const {s}: @This() = {};", .{ try nz.get(a.name), a.value.val });
                 try w.end();
             } else {
                 try w.begin("enum(u32)", e.name);

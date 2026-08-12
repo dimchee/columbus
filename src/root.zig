@@ -39,13 +39,16 @@ pub const RegistryBinder = struct {
     pub fn init(con: *Connection, registry: wl_registry) @This() {
         return .{ .con = con, .registry = registry };
     }
-    pub fn bind(self: *@This(), x: wl_registry.Event.global, name: []const u8, version: u32, id: u32) void {
+    pub fn bind(self: *@This(), x: wl_registry.Event.global, T: type, id: u32) void {
+        if (comptime !meta.is(.interface, T)) 
+            @compileError("Can bind interface only, not " ++ @typeName(T));
+        const name = comptime @typeName(T)[std.mem.findScalarLast(u8, @typeName(T), '.').? + 1 ..];
         if (x.interface.eql(name)) {
             self.con.io.sender.push(self.registry, wl_registry.Request.bind{
                 .name = x.name,
                 .id = way.types.any{
                     .interface = way.types.str.fromStr(name),
-                    .version = version,
+                    .version = T.Version,
                     .id = id,
                 },
             });
