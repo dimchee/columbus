@@ -164,7 +164,13 @@ const Normalizer = struct {
             .fd => "types.fd", //"std.posix.fd_t",
             .int => "i32",
             // maybe use wl_registry.global as any?
-            .new_id => x.interface orelse "types.any",
+            .new_id => if (x.interface) |i| x: {
+                const split = std.mem.findScalar(u8, i, '_').?;
+                break :x if (std.mem.eql(u8, i[0..split], "wl"))
+                    std.fmt.allocPrint(self.alloc, "wayland.{s}", .{i})
+                else
+                    i;
+            } else "types.any",
             .object => "u32", // id of object
             .string => "types.str",
             .uint => if (x.@"enum") |e| sol: {
@@ -187,7 +193,7 @@ pub fn main(init: std.process.Init) !void {
     const parsed = try Parsed.init(init, &[_][]const u8{
         "spec/wayland.json",
         "spec/xdg-shell.json",
-        // "spec/linux-dmabuf.json",
+        "spec/linux-dmabuf.json",
     });
     defer parsed.deinit();
     var w = try Wrapper.init(init.io, "src/wayland.zig");
