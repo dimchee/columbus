@@ -5,6 +5,7 @@ const xdg_shell = clb.way.protocol.xdg_shell;
 const meta = clb.meta;
 const types = clb.way.types;
 
+// Generate using [EGL bindings](https://github.com/KhronosGroup/EGL-Registry/blob/main/api/egl.xml)
 const EGL = struct {
     const Display = ?*anyopaque;
     const Context = ?*anyopaque;
@@ -28,45 +29,49 @@ const EGL = struct {
     const WIDTH: u32 = 0x3057;
     const HEIGHT: u32 = 0x3056;
     const CONTEXT_CLIENT_VERSION: u32 = 0x3098;
-    const EglGetPlatformDisplayFn = *const fn (u32, ?*anyopaque, ?[*]const EGL.int) callconv(.c) EGL.Display;
-    const EglInitializeFn = *const fn (EGL.Display, ?*EGL.int, ?*EGL.int) callconv(.c) EGL.Boolean;
-    const EglBindApiFn = *const fn (u32) callconv(.c) EGL.Boolean;
-    const EglChooseConfigFn = *const fn (EGL.Display, ?[*]const EGL.int, ?[*]EGL.Config, EGL.int, ?*EGL.int) callconv(.c) EGL.Boolean;
-    const EglCreateContextFn = *const fn (EGL.Display, EGL.Config, EGL.Context, ?[*]const EGL.int) callconv(.c) EGL.Context;
-    const EglCreatePbufferSurfaceFn = *const fn (EGL.Display, EGL.Config, ?[*]const EGL.int) callconv(.c) EGL.Surface;
-    const EglMakeCurrentFn = *const fn (EGL.Display, EGL.Surface, EGL.Surface, EGL.Context) callconv(.c) EGL.Boolean;
-    const EglSwapBuffersFn = *const fn (EGL.Display, EGL.Surface) callconv(.c) EGL.Boolean;
-    const EglGetErrorFn = *const fn () callconv(.c) EGL.int;
-    const EglTerminateFn = *const fn (EGL.Display) callconv(.c) EGL.Boolean;
-    GetPlatformDisplay: EglGetPlatformDisplayFn,
-    Initialize: EglInitializeFn,
-    BindAPI: EglBindApiFn,
-    ChooseConfig: EglChooseConfigFn,
-    CreateContext: EglCreateContextFn,
-    CreatePbufferSurface: EglCreatePbufferSurfaceFn,
-    MakeCurrent: EglMakeCurrentFn,
-    SwapBuffers: EglSwapBuffersFn,
-    GetError: EglGetErrorFn,
-    Terminate: EglTerminateFn,
+    const GetPlatformDisplayFn = *const fn (u32, ?*anyopaque, ?[*]const EGL.int) callconv(.c) EGL.Display;
+    const InitializeFn = *const fn (EGL.Display, ?*EGL.int, ?*EGL.int) callconv(.c) EGL.Boolean;
+    const BindApiFn = *const fn (u32) callconv(.c) EGL.Boolean;
+    const ChooseConfigFn = *const fn (EGL.Display, ?[*]const EGL.int, ?[*]EGL.Config, EGL.int, ?*EGL.int) callconv(.c) EGL.Boolean;
+    const CreateContextFn = *const fn (EGL.Display, EGL.Config, EGL.Context, ?[*]const EGL.int) callconv(.c) EGL.Context;
+    const CreatePbufferSurfaceFn = *const fn (EGL.Display, EGL.Config, ?[*]const EGL.int) callconv(.c) EGL.Surface;
+    const MakeCurrentFn = *const fn (EGL.Display, EGL.Surface, EGL.Surface, EGL.Context) callconv(.c) EGL.Boolean;
+    const SwapBuffersFn = *const fn (EGL.Display, EGL.Surface) callconv(.c) EGL.Boolean;
+    const GetErrorFn = *const fn () callconv(.c) EGL.int;
+    const TerminateFn = *const fn (EGL.Display) callconv(.c) EGL.Boolean;
+    const DestroySurfaceFn = *const fn (EGL.Display, EGL.Surface) callconv(.c) EGL.Boolean;
+    GetPlatformDisplay: GetPlatformDisplayFn,
+    Initialize: InitializeFn,
+    BindAPI: BindApiFn,
+    ChooseConfig: ChooseConfigFn,
+    CreateContext: CreateContextFn,
+    CreatePbufferSurface: CreatePbufferSurfaceFn,
+    MakeCurrent: MakeCurrentFn,
+    SwapBuffers: SwapBuffersFn,
+    GetError: GetErrorFn,
+    Terminate: TerminateFn,
+    DestroySurface: DestroySurfaceFn,
 
     pub fn load(lib: *std.DynLib) @This() {
         return .{
-            .GetPlatformDisplay = lib.lookup(EglGetPlatformDisplayFn, "eglGetPlatformDisplayEXT") orelse
-                (lib.lookup(EglGetPlatformDisplayFn, "eglGetPlatformDisplay") orelse
+            .GetPlatformDisplay = lib.lookup(GetPlatformDisplayFn, "eglGetPlatformDisplayEXT") orelse
+                (lib.lookup(GetPlatformDisplayFn, "eglGetPlatformDisplay") orelse
                     @panic("eglGetPlatformDisplay not found in libEGL")),
-            .Initialize = lib.lookup(EglInitializeFn, "eglInitialize").?,
-            .BindAPI = lib.lookup(EglBindApiFn, "eglBindAPI").?,
-            .ChooseConfig = lib.lookup(EglChooseConfigFn, "eglChooseConfig").?,
-            .CreateContext = lib.lookup(EglCreateContextFn, "eglCreateContext").?,
-            .CreatePbufferSurface = lib.lookup(EglCreatePbufferSurfaceFn, "eglCreatePbufferSurface").?,
-            .MakeCurrent = lib.lookup(EglMakeCurrentFn, "eglMakeCurrent").?,
-            .SwapBuffers = lib.lookup(EglSwapBuffersFn, "eglSwapBuffers").?,
-            .GetError = lib.lookup(EglGetErrorFn, "eglGetError").?,
-            .Terminate = lib.lookup(EglTerminateFn, "eglTerminate").?,
+            .Initialize = lib.lookup(InitializeFn, "eglInitialize").?,
+            .BindAPI = lib.lookup(BindApiFn, "eglBindAPI").?,
+            .ChooseConfig = lib.lookup(ChooseConfigFn, "eglChooseConfig").?,
+            .CreateContext = lib.lookup(CreateContextFn, "eglCreateContext").?,
+            .CreatePbufferSurface = lib.lookup(CreatePbufferSurfaceFn, "eglCreatePbufferSurface").?,
+            .MakeCurrent = lib.lookup(MakeCurrentFn, "eglMakeCurrent").?,
+            .SwapBuffers = lib.lookup(SwapBuffersFn, "eglSwapBuffers").?,
+            .GetError = lib.lookup(GetErrorFn, "eglGetError").?,
+            .Terminate = lib.lookup(TerminateFn, "eglTerminate").?,
+            .DestroySurface = lib.lookup(DestroySurfaceFn, "eglDestroySurface").?,
         };
     }
 };
 
+// Generate using [GL bindings](https://github.com/KhronosGroup/OpenGL-Registry/blob/main/xml/gl.xml)
 const GL = struct {
     const uint = u32;
     const int = i32;
@@ -87,95 +92,95 @@ const GL = struct {
     const RGBA: u32 = 0x1908;
     const UNSIGNED_BYTE: u32 = 0x1401;
     const PACK_ALIGNMENT: u32 = 0x0D05;
-    const GlCreateShaderFn = *const fn (GL.@"enum") callconv(.c) GL.uint;
-    const GlShaderSourceFn = *const fn (GL.uint, GL.sizei, [*]const [*]const u8, ?[*]const GL.int) callconv(.c) void;
-    const GlCompileShaderFn = *const fn (GL.uint) callconv(.c) void;
-    const GlGetShaderivFn = *const fn (GL.uint, GL.@"enum", *GL.int) callconv(.c) void;
-    const GlGetShaderInfoLogFn = *const fn (GL.uint, GL.sizei, *GL.sizei, [*]u8) callconv(.c) void;
-    const GlDeleteShaderFn = *const fn (GL.uint) callconv(.c) void;
-    const GlCreateProgramFn = *const fn () callconv(.c) GL.uint;
-    const GlAttachShaderFn = *const fn (GL.uint, GL.uint) callconv(.c) void;
-    const GlLinkProgramFn = *const fn (GL.uint) callconv(.c) void;
-    const GlGetProgramivFn = *const fn (GL.uint, GL.@"enum", *GL.int) callconv(.c) void;
-    const GlGetProgramInfoLogFn = *const fn (GL.uint, GL.sizei, *GL.sizei, [*]u8) callconv(.c) void;
-    const GlDeleteProgramFn = *const fn (GL.uint) callconv(.c) void;
-    const GlUseProgramFn = *const fn (GL.uint) callconv(.c) void;
-    const GlGetUniformLocationFn = *const fn (GL.uint, [*:0]const u8) callconv(.c) GL.int;
-    const GlGetAttribLocationFn = *const fn (GL.uint, [*:0]const u8) callconv(.c) GL.int;
-    const GlGenBuffersFn = *const fn (GL.sizei, *GL.uint) callconv(.c) void;
-    const GlBindBufferFn = *const fn (GL.@"enum", GL.uint) callconv(.c) void;
-    const GlBufferDataFn = *const fn (GL.@"enum", isize, *const anyopaque, GL.@"enum") callconv(.c) void;
-    const GlVertexAttribPointerFn = *const fn (GL.uint, GL.int, GL.@"enum", GL.boolean, GL.sizei, ?*const anyopaque) callconv(.c) void;
-    const GlEnableVertexAttribArrayFn = *const fn (GL.uint) callconv(.c) void;
-    const GlUniform1fFn = *const fn (GL.int, GL.float) callconv(.c) void;
-    const GlDrawArraysFn = *const fn (GL.@"enum", GL.int, GL.sizei) callconv(.c) void;
-    const GlReadPixelsFn = *const fn (GL.int, GL.int, GL.sizei, GL.sizei, GL.@"enum", GL.@"enum", ?*anyopaque) callconv(.c) void;
-    const GlGetStringFn = *const fn (GL.@"enum") callconv(.c) ?[*:0]const u8;
-    const GlClearColorFn = *const fn (GL.float, GL.float, GL.float, GL.float) callconv(.c) void;
-    const GlClearFn = *const fn (GL.bitfield) callconv(.c) void;
-    const GlViewportFn = *const fn (GL.int, GL.int, GL.sizei, GL.sizei) callconv(.c) void;
-    const GlPixelStoreiFn = *const fn (GL.@"enum", GL.int) callconv(.c) void;
-    const GlDeleteBuffersFn = *const fn (GL.sizei, *GL.uint) callconv(.c) void;
-    CreateShader: GlCreateShaderFn,
-    ShaderSource: GlShaderSourceFn,
-    CompileShader: GlCompileShaderFn,
-    GetShaderiv: GlGetShaderivFn,
-    GetShaderInfoLog: GlGetShaderInfoLogFn,
-    DeleteShader: GlDeleteShaderFn,
-    CreateProgram: GlCreateProgramFn,
-    AttachShader: GlAttachShaderFn,
-    LinkProgram: GlLinkProgramFn,
-    GetProgramiv: GlGetProgramivFn,
-    GetProgramInfoLog: GlGetProgramInfoLogFn,
-    DeleteProgram: GlDeleteProgramFn,
-    UseProgram: GlUseProgramFn,
-    GetUniformLocation: GlGetUniformLocationFn,
-    GetAttribLocation: GlGetAttribLocationFn,
-    GenBuffers: GlGenBuffersFn,
-    BindBuffer: GlBindBufferFn,
-    BufferData: GlBufferDataFn,
-    VertexAttribPointer: GlVertexAttribPointerFn,
-    EnableVertexAttribArray: GlEnableVertexAttribArrayFn,
-    Uniform1f: GlUniform1fFn,
-    DrawArrays: GlDrawArraysFn,
-    ReadPixels: GlReadPixelsFn,
-    GetString: GlGetStringFn,
-    ClearColor: GlClearColorFn,
-    Clear: GlClearFn,
-    Viewport: GlViewportFn,
-    PixelStorei: GlPixelStoreiFn,
-    DeleteBuffers: GlDeleteBuffersFn,
+    const CreateShaderFn = *const fn (GL.@"enum") callconv(.c) GL.uint;
+    const ShaderSourceFn = *const fn (GL.uint, GL.sizei, [*]const [*]const u8, ?[*]const GL.int) callconv(.c) void;
+    const CompileShaderFn = *const fn (GL.uint) callconv(.c) void;
+    const GetShaderivFn = *const fn (GL.uint, GL.@"enum", *GL.int) callconv(.c) void;
+    const GetShaderInfoLogFn = *const fn (GL.uint, GL.sizei, *GL.sizei, [*]u8) callconv(.c) void;
+    const DeleteShaderFn = *const fn (GL.uint) callconv(.c) void;
+    const CreateProgramFn = *const fn () callconv(.c) GL.uint;
+    const AttachShaderFn = *const fn (GL.uint, GL.uint) callconv(.c) void;
+    const LinkProgramFn = *const fn (GL.uint) callconv(.c) void;
+    const GetProgramivFn = *const fn (GL.uint, GL.@"enum", *GL.int) callconv(.c) void;
+    const GetProgramInfoLogFn = *const fn (GL.uint, GL.sizei, *GL.sizei, [*]u8) callconv(.c) void;
+    const DeleteProgramFn = *const fn (GL.uint) callconv(.c) void;
+    const UseProgramFn = *const fn (GL.uint) callconv(.c) void;
+    const GetUniformLocationFn = *const fn (GL.uint, [*:0]const u8) callconv(.c) GL.int;
+    const GetAttribLocationFn = *const fn (GL.uint, [*:0]const u8) callconv(.c) GL.int;
+    const GenBuffersFn = *const fn (GL.sizei, *GL.uint) callconv(.c) void;
+    const BindBufferFn = *const fn (GL.@"enum", GL.uint) callconv(.c) void;
+    const BufferDataFn = *const fn (GL.@"enum", isize, *const anyopaque, GL.@"enum") callconv(.c) void;
+    const VertexAttribPointerFn = *const fn (GL.uint, GL.int, GL.@"enum", GL.boolean, GL.sizei, ?*const anyopaque) callconv(.c) void;
+    const EnableVertexAttribArrayFn = *const fn (GL.uint) callconv(.c) void;
+    const Uniform1fFn = *const fn (GL.int, GL.float) callconv(.c) void;
+    const DrawArraysFn = *const fn (GL.@"enum", GL.int, GL.sizei) callconv(.c) void;
+    const ReadPixelsFn = *const fn (GL.int, GL.int, GL.sizei, GL.sizei, GL.@"enum", GL.@"enum", ?*anyopaque) callconv(.c) void;
+    const GetStringFn = *const fn (GL.@"enum") callconv(.c) ?[*:0]const u8;
+    const ClearColorFn = *const fn (GL.float, GL.float, GL.float, GL.float) callconv(.c) void;
+    const ClearFn = *const fn (GL.bitfield) callconv(.c) void;
+    const ViewportFn = *const fn (GL.int, GL.int, GL.sizei, GL.sizei) callconv(.c) void;
+    const PixelStoreiFn = *const fn (GL.@"enum", GL.int) callconv(.c) void;
+    const DeleteBuffersFn = *const fn (GL.sizei, *GL.uint) callconv(.c) void;
+    CreateShader: CreateShaderFn,
+    ShaderSource: ShaderSourceFn,
+    CompileShader: CompileShaderFn,
+    GetShaderiv: GetShaderivFn,
+    GetShaderInfoLog: GetShaderInfoLogFn,
+    DeleteShader: DeleteShaderFn,
+    CreateProgram: CreateProgramFn,
+    AttachShader: AttachShaderFn,
+    LinkProgram: LinkProgramFn,
+    GetProgramiv: GetProgramivFn,
+    GetProgramInfoLog: GetProgramInfoLogFn,
+    DeleteProgram: DeleteProgramFn,
+    UseProgram: UseProgramFn,
+    GetUniformLocation: GetUniformLocationFn,
+    GetAttribLocation: GetAttribLocationFn,
+    GenBuffers: GenBuffersFn,
+    BindBuffer: BindBufferFn,
+    BufferData: BufferDataFn,
+    VertexAttribPointer: VertexAttribPointerFn,
+    EnableVertexAttribArray: EnableVertexAttribArrayFn,
+    Uniform1f: Uniform1fFn,
+    DrawArrays: DrawArraysFn,
+    ReadPixels: ReadPixelsFn,
+    GetString: GetStringFn,
+    ClearColor: ClearColorFn,
+    Clear: ClearFn,
+    Viewport: ViewportFn,
+    PixelStorei: PixelStoreiFn,
+    DeleteBuffers: DeleteBuffersFn,
     pub fn load(lib: *std.DynLib) @This() {
         return .{
-            .CreateShader = lib.lookup(GlCreateShaderFn, "glCreateShader").?,
-            .ShaderSource = lib.lookup(GlShaderSourceFn, "glShaderSource").?,
-            .CompileShader = lib.lookup(GlCompileShaderFn, "glCompileShader").?,
-            .GetShaderiv = lib.lookup(GlGetShaderivFn, "glGetShaderiv").?,
-            .GetShaderInfoLog = lib.lookup(GlGetShaderInfoLogFn, "glGetShaderInfoLog").?,
-            .DeleteShader = lib.lookup(GlDeleteShaderFn, "glDeleteShader").?,
-            .CreateProgram = lib.lookup(GlCreateProgramFn, "glCreateProgram").?,
-            .AttachShader = lib.lookup(GlAttachShaderFn, "glAttachShader").?,
-            .LinkProgram = lib.lookup(GlLinkProgramFn, "glLinkProgram").?,
-            .GetProgramiv = lib.lookup(GlGetProgramivFn, "glGetProgramiv").?,
-            .GetProgramInfoLog = lib.lookup(GlGetProgramInfoLogFn, "glGetProgramInfoLog").?,
-            .DeleteProgram = lib.lookup(GlDeleteProgramFn, "glDeleteProgram").?,
-            .UseProgram = lib.lookup(GlUseProgramFn, "glUseProgram").?,
-            .GetUniformLocation = lib.lookup(GlGetUniformLocationFn, "glGetUniformLocation").?,
-            .GetAttribLocation = lib.lookup(GlGetAttribLocationFn, "glGetAttribLocation").?,
-            .GenBuffers = lib.lookup(GlGenBuffersFn, "glGenBuffers").?,
-            .BindBuffer = lib.lookup(GlBindBufferFn, "glBindBuffer").?,
-            .BufferData = lib.lookup(GlBufferDataFn, "glBufferData").?,
-            .VertexAttribPointer = lib.lookup(GlVertexAttribPointerFn, "glVertexAttribPointer").?,
-            .EnableVertexAttribArray = lib.lookup(GlEnableVertexAttribArrayFn, "glEnableVertexAttribArray").?,
-            .Uniform1f = lib.lookup(GlUniform1fFn, "glUniform1f").?,
-            .DrawArrays = lib.lookup(GlDrawArraysFn, "glDrawArrays").?,
-            .ReadPixels = lib.lookup(GlReadPixelsFn, "glReadPixels").?,
-            .GetString = lib.lookup(GlGetStringFn, "glGetString").?,
-            .ClearColor = lib.lookup(GlClearColorFn, "glClearColor").?,
-            .Clear = lib.lookup(GlClearFn, "glClear").?,
-            .Viewport = lib.lookup(GlViewportFn, "glViewport").?,
-            .PixelStorei = lib.lookup(GlPixelStoreiFn, "glPixelStorei").?,
-            .DeleteBuffers = lib.lookup(GlDeleteBuffersFn, "glDeleteBuffers").?,
+            .CreateShader = lib.lookup(CreateShaderFn, "glCreateShader").?,
+            .ShaderSource = lib.lookup(ShaderSourceFn, "glShaderSource").?,
+            .CompileShader = lib.lookup(CompileShaderFn, "glCompileShader").?,
+            .GetShaderiv = lib.lookup(GetShaderivFn, "glGetShaderiv").?,
+            .GetShaderInfoLog = lib.lookup(GetShaderInfoLogFn, "glGetShaderInfoLog").?,
+            .DeleteShader = lib.lookup(DeleteShaderFn, "glDeleteShader").?,
+            .CreateProgram = lib.lookup(CreateProgramFn, "glCreateProgram").?,
+            .AttachShader = lib.lookup(AttachShaderFn, "glAttachShader").?,
+            .LinkProgram = lib.lookup(LinkProgramFn, "glLinkProgram").?,
+            .GetProgramiv = lib.lookup(GetProgramivFn, "glGetProgramiv").?,
+            .GetProgramInfoLog = lib.lookup(GetProgramInfoLogFn, "glGetProgramInfoLog").?,
+            .DeleteProgram = lib.lookup(DeleteProgramFn, "glDeleteProgram").?,
+            .UseProgram = lib.lookup(UseProgramFn, "glUseProgram").?,
+            .GetUniformLocation = lib.lookup(GetUniformLocationFn, "glGetUniformLocation").?,
+            .GetAttribLocation = lib.lookup(GetAttribLocationFn, "glGetAttribLocation").?,
+            .GenBuffers = lib.lookup(GenBuffersFn, "glGenBuffers").?,
+            .BindBuffer = lib.lookup(BindBufferFn, "glBindBuffer").?,
+            .BufferData = lib.lookup(BufferDataFn, "glBufferData").?,
+            .VertexAttribPointer = lib.lookup(VertexAttribPointerFn, "glVertexAttribPointer").?,
+            .EnableVertexAttribArray = lib.lookup(EnableVertexAttribArrayFn, "glEnableVertexAttribArray").?,
+            .Uniform1f = lib.lookup(Uniform1fFn, "glUniform1f").?,
+            .DrawArrays = lib.lookup(DrawArraysFn, "glDrawArrays").?,
+            .ReadPixels = lib.lookup(ReadPixelsFn, "glReadPixels").?,
+            .GetString = lib.lookup(GetStringFn, "glGetString").?,
+            .ClearColor = lib.lookup(ClearColorFn, "glClearColor").?,
+            .Clear = lib.lookup(ClearFn, "glClear").?,
+            .Viewport = lib.lookup(ViewportFn, "glViewport").?,
+            .PixelStorei = lib.lookup(PixelStoreiFn, "glPixelStorei").?,
+            .DeleteBuffers = lib.lookup(DeleteBuffersFn, "glDeleteBuffers").?,
         };
     }
 };
@@ -240,13 +245,12 @@ fn buildProgram(gl: GL) GL.uint {
 
 // Owns an offscreen EGL/OpenGL ES 2.0 context that renders an animated shader and writes the result into a wl_shm-compatible pixel buffer.
 const Gpu = struct {
-    lib_egl: std.DynLib,
-    lib_gl: std.DynLib,
-    egl: EGL,
-    gl: GL,
+    lib: struct { egl: std.DynLib, gl: std.DynLib },
+    bindings: struct { egl: EGL, gl: GL },
     dpy: EGL.Display,
     ctx: EGL.Context,
     surf: EGL.Surface,
+    config: EGL.Config,
     w: i32,
     h: i32,
     program: GL.uint,
@@ -322,13 +326,12 @@ const Gpu = struct {
         const readbuf = try std.heap.page_allocator.alloc(u8, @intCast(w * h * 4));
 
         return .{
-            .lib_egl = lib_egl,
-            .lib_gl = lib_gl,
-            .egl = egl,
-            .gl = gl,
+            .lib = .{ .egl = lib_egl, .gl = lib_gl },
+            .bindings = .{ .egl = egl, .gl = gl },
             .dpy = dpy,
             .ctx = ctx,
             .surf = surf,
+            .config = cfg,
             .w = w,
             .h = h,
             .program = program,
@@ -339,8 +342,22 @@ const Gpu = struct {
         };
     }
 
+    pub fn resize(self: *Gpu, w: i32, h: i32) void {
+        if (self.w == w and self.h == h) return;
+        _ = self.bindings.egl.DestroySurface(self.dpy, self.surf);
+        const pb = [_]EGL.int{ EGL.WIDTH, w, EGL.HEIGHT, h, EGL.NONE };
+        const surf = self.bindings.egl.CreatePbufferSurface(self.dpy, self.config, &pb);
+        if (surf == null) @panic("eglCreatePbufferSurface failed on resize");
+        if (self.bindings.egl.MakeCurrent(self.dpy, surf, surf, self.ctx) == 0) @panic("eglMakeCurrent failed on resize");
+        self.surf = surf;
+        std.heap.page_allocator.free(self.readbuf);
+        self.readbuf = std.heap.page_allocator.alloc(u8, @intCast(w * h * 4)) catch @panic("oom resizing gpu readbuf");
+        self.w = w;
+        self.h = h;
+    }
+
     pub fn render(self: *Gpu, time: f32, out: []FrameBuf.Pixel) void {
-        const gl = self.gl;
+        const gl = self.bindings.gl;
         gl.ClearColor(0, 0, 0, 1);
         gl.Clear(GL.COLOR_BUFFER_BIT);
         gl.UseProgram(self.program);
@@ -363,9 +380,9 @@ const Gpu = struct {
 
     pub fn deinit(self: *Gpu) void {
         std.heap.page_allocator.free(self.readbuf);
-        _ = self.egl.Terminate(self.dpy);
-        self.lib_egl.close();
-        self.lib_gl.close();
+        _ = self.bindings.egl.Terminate(self.dpy);
+        self.lib.egl.close();
+        self.lib.gl.close();
     }
 };
 
@@ -401,28 +418,29 @@ pub inline fn configure(Op: type, x: Op, args: anytype) bool {
 const FrameBuf = struct {
     const Pixel = [4]u8;
     fd: std.os.linux.fd_t,
-    size: [2]i32,
+    max: [2]i32,
     byte_size: i32,
+    mem: []u8,
+    w: i32,
+    h: i32,
     pixels: []Pixel,
-    pub fn init() @This() {
-        const size = [2]i32{ 128, 128 };
-        const framebuffer_byte_size = size[0] * size[1] * @sizeOf(Pixel);
-
+    pub fn init(max: [2]i32) @This() {
+        const byte_size: i32 = max[0] * max[1] * 4;
         const fd: std.os.linux.fd_t = @intCast(std.os.linux.memfd_create("framebuffer", 0));
-        _ = std.os.linux.ftruncate(fd, framebuffer_byte_size);
-
-        const OPAQUE_BLACK = [4]u8{ 0, 0, 0, 0xFF };
-        const memory: *[framebuffer_byte_size]u8 = @ptrFromInt(std.os.linux.mmap(null, framebuffer_byte_size, .{ .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0));
-        const pixels: []Pixel = std.mem.bytesAsSlice(Pixel, memory);
-        @memset(pixels, OPAQUE_BLACK);
-        for (0..64) |i| for (0..64) |j| {
-            pixels[i * 128 + j] = [4]u8{ 0xFF, 0, 0, 0xFF };
-            pixels[i * 128 + j + 64] = [4]u8{ 0, 0, 0, 0 };
-        };
-        return .{ .fd = fd, .size = size, .byte_size = framebuffer_byte_size, .pixels = pixels };
+        _ = std.os.linux.ftruncate(fd, byte_size);
+        const addr = std.os.linux.mmap(null, @intCast(byte_size), .{ .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0);
+        const mem: []u8 = @as([*]u8, @ptrFromInt(addr))[0..@intCast(byte_size)];
+        return .{ .fd = fd, .max = max, .byte_size = byte_size, .mem = mem, .w = 0, .h = 0, .pixels = &[_]Pixel{} };
+    }
+    pub fn resize(self: *@This(), w: i32, h: i32) void {
+        self.w = w;
+        self.h = h;
+        const n: usize = @as(usize, @intCast(w)) * @as(usize, @intCast(h));
+        self.pixels = std.mem.bytesAsSlice(Pixel, self.mem[0 .. n * 4]);
+        @memset(self.pixels, [4]u8{ 0, 0, 0, 0xFF });
     }
     pub fn deinit(self: @This()) void {
-        defer _ = std.os.linux.munmap(@ptrCast(@alignCast(self.pixels)), self.byte_size);
+        _ = std.os.linux.munmap(@ptrCast(@alignCast(self.mem.ptr)), @intCast(self.byte_size));
         _ = std.os.linux.close(self.fd);
     }
 };
@@ -450,35 +468,69 @@ pub inline fn conf_input(Op: type, x: Op, args: anytype) bool {
 }
 
 const State = struct {
-    frame_time: u32 = 0,
     render: bool = true,
+    frame: u32 = 0,
     fb: *FrameBuf,
     gpu: *Gpu,
     wl_surface: way.wl_surface,
+    xdg_surface: xdg_shell.xdg_surface,
     xdg_wm_base: xdg_shell.xdg_wm_base,
     env: *clb.Env,
     con: *clb.Connection,
+    size: [2]i32,
+    pending: [2]i32,
+    need_resize: bool = false,
+    busy: bool = true,
+    wl_shm_pool: way.wl_shm_pool,
+    wl_buffer: way.wl_buffer,
+    last_abandoned: way.wl_buffer = .{ .id = 0 },
 };
 pub inline fn run(Op: type, x: Op, s: *State) bool {
-    if (s.render) {
-        s.gpu.render(@as(f32, @floatFromInt(s.frame_time)) / 1000.0, s.fb.pixels);
-
-        const frame_callback = s.env.new(way.wl_callback);
-
-        s.con.io.sender.push(s.wl_surface, way.wl_surface.Request.frame{ .callback = frame_callback });
-        s.con.io.sender.push(s.wl_surface, way.wl_surface.Request.damage{ .x = 0, .y = 0, .width = std.math.maxInt(i32), .height = std.math.maxInt(i32) });
-        s.con.io.sender.push(s.wl_surface, way.wl_surface.Request.commit{});
-        s.con.send();
-        s.render = false;
-    }
-
     switch (Op) {
-        way.wl_callback.Event.done => {
-            // std.debug.print("Frame time: {s}{}\n", .{ @typeName(Op), x });
-            s.frame_time = x.callback_data;
-            s.render = true;
+        xdg_shell.xdg_toplevel.Event.configure => {
+            if (x.width > 0 and x.height > 0) {
+                const w = @min(x.width, s.fb.max[0]);
+                const h = @min(x.height, s.fb.max[1]);
+                if (w != s.size[0] or h != s.size[1]) {
+                    s.pending = [2]i32{ w, h };
+                    s.need_resize = true;
+                }
+            }
+        },
+        xdg_shell.xdg_surface.Event.configure => {
+            if (s.need_resize) {
+                const w = s.pending[0];
+                const h = s.pending[1];
+                const old = s.wl_buffer;
+                s.fb.resize(w, h);
+                s.gpu.resize(w, h);
+                if (s.last_abandoned.id != 0) {
+                    s.con.io.sender.push(s.last_abandoned, way.wl_buffer.Request.destroy{});
+                }
+                const new_buf = s.env.new(way.wl_buffer);
+                s.con.io.sender.push(s.wl_shm_pool, way.wl_shm_pool.Request.create_buffer{
+                    .id = new_buf,
+                    .offset = 0,
+                    .width = w,
+                    .height = h,
+                    .stride = w * 4,
+                    .format = .argb8888,
+                });
+                s.last_abandoned = old;
+                s.wl_buffer = new_buf;
+                s.size = s.pending;
+                s.need_resize = false;
+                s.render = true;
+            }
+            s.con.io.sender.push(s.xdg_surface, xdg_shell.xdg_surface.Request.ack_configure{ .serial = x.serial });
+            s.con.send();
         },
         way.wl_display.Event.Error => std.debug.print("Error: {f}\n", .{x.message}),
+        way.wl_buffer.Event.release => {
+            // Compositor is done with the buffer; we may render into it again.
+            s.busy = false;
+            s.render = true;
+        },
         way.wl_display.Event.delete_id => s.env.delete(x.id),
         xdg_shell.xdg_toplevel.Event.close => {
             std.debug.print("Closing window!\n", .{});
@@ -492,6 +544,18 @@ pub inline fn run(Op: type, x: Op, s: *State) bool {
         way.wl_pointer.Event.frame => {},
         way.wl_pointer.Event.motion => {},
         else => std.debug.print("Ignored Msg {s}{}\n", .{ @typeName(Op), x }),
+    }
+
+    if (s.render and !s.busy) {
+        s.frame += 1;
+        const t = @as(f32, @floatFromInt(s.frame)) / 60.0;
+        s.gpu.render(t, s.fb.pixels);
+        s.con.io.sender.push(s.wl_surface, way.wl_surface.Request.attach{ .buffer = s.wl_buffer.id, .x = 0, .y = 0 });
+        s.con.io.sender.push(s.wl_surface, way.wl_surface.Request.damage{ .x = 0, .y = 0, .width = std.math.maxInt(i32), .height = std.math.maxInt(i32) });
+        s.con.io.sender.push(s.wl_surface, way.wl_surface.Request.commit{});
+        s.con.send();
+        s.busy = true;
+        s.render = false;
     }
     return true;
 }
@@ -544,10 +608,15 @@ pub fn main(init: std.process.Init) !void {
         .xdg_surface = xdg_surface,
     }, .{configure}, clb.alwaysFalse);
 
+    const MAX: [2]i32 = .{ 4096, 4096 };
+    const INITIAL: [2]i32 = .{ 256, 256 };
+
+    var fb = FrameBuf.init(MAX);
+    fb.resize(INITIAL[0], INITIAL[1]);
+
     const wl_shm_pool = env.new(way.wl_shm_pool);
     const wl_buffer = env.new(way.wl_buffer);
     // con.io.sender.push(wl_compositor, way.wl_compositor.Request.create_surface{ .id = wl_surface });
-    var fb = FrameBuf.init();
     con.io.sender.push(wl_shm, way.wl_shm.Request.create_pool{
         .id = wl_shm_pool,
         .fd = .{ .fd = fb.fd },
@@ -556,9 +625,9 @@ pub fn main(init: std.process.Init) !void {
     con.io.sender.push(wl_shm_pool, way.wl_shm_pool.Request.create_buffer{
         .id = wl_buffer,
         .offset = 0,
-        .width = fb.size[0],
-        .height = fb.size[1],
-        .stride = fb.size[0] * @sizeOf(FrameBuf.Pixel),
+        .width = INITIAL[0],
+        .height = INITIAL[1],
+        .stride = INITIAL[0] * 4,
         .format = .argb8888,
     });
     con.io.sender.push(wl_surface, way.wl_surface.Request.attach{
@@ -570,10 +639,23 @@ pub fn main(init: std.process.Init) !void {
     con.io.sender.push(wl_surface, way.wl_surface.Request.commit{});
     con.send();
 
-    var gpu = try Gpu.init(fb.size[0], fb.size[1]);
+    var gpu = try Gpu.init(INITIAL[0], INITIAL[1]);
     defer gpu.deinit();
 
-    var state = State{ .fb = &fb, .gpu = &gpu, .wl_surface = wl_surface, .xdg_wm_base = xdg_wm_base, .env = &env, .con = &con };
+    var state = State{
+        .fb = &fb,
+        .gpu = &gpu,
+        .wl_surface = wl_surface,
+        .xdg_surface = xdg_surface,
+        .xdg_wm_base = xdg_wm_base,
+        .env = &env,
+        .con = &con,
+        .size = INITIAL,
+        .pending = INITIAL,
+        .need_resize = false,
+        .wl_shm_pool = wl_shm_pool,
+        .wl_buffer = wl_buffer,
+    };
     try clb.loop(init.io, &con, &env, &state, .{run}, clb.wait_for(.fromMilliseconds(16)));
 }
 // const xkb_keycode = keycode + 8;
