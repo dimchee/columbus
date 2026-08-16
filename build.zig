@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
         const exe = b.addExecutable(.{
             .name = "app",
             .root_module = b.createModule(.{
-                .root_source_file = b.path("examples/4_gpu.zig"),
+                .root_source_file = b.path("examples/5_gpu2.zig"),
                 .target = target,
                 .optimize = optimize,
                 .imports = &.{
