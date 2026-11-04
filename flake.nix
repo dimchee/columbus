@@ -18,12 +18,25 @@
         libglvnd = pkgs.libglvnd;
         mesa = pkgs.mesa;
         gbm = pkgs.libgbm;
+        runtimeLibs = [ libglvnd mesa gbm ];
+        runtimeLibraryPath = pkgs.lib.makeLibraryPath runtimeLibs;
+
+        # The example uses dlopen("libEGL.so.1"), so the libraries must be
+        # findable at runtime, not just at link time. Wrap Zig so that
+        # `zig build run` (and the binary it starts) always gets the right
+        # loader environment, even if the surrounding shell is stale.
+        zig = pkgs.writeShellScriptBin "zig" ''
+          export LD_LIBRARY_PATH="${runtimeLibraryPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export LIBGL_DRIVERS_PATH="${mesa}/lib/dri"
+          export __EGL_VENDOR_LIBRARY_PATHS="${mesa}/share/glvnd/egl_vendor.d"
+          exec ${pkgs.zig}/bin/zig "$@"
+        '';
       in {
         devShells.default = pkgs.mkShell {
           name = "columbus-gpu";
-          buildInputs = [ libglvnd mesa gbm ];
+          buildInputs = [ zig ] ++ runtimeLibs;
           shellHook = ''
-            export LD_LIBRARY_PATH="${libglvnd}/lib:${mesa}/lib:${gbm}/lib:$LD_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="${runtimeLibraryPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             export LIBGL_DRIVERS_PATH="${mesa}/lib/dri"
             export __EGL_VENDOR_LIBRARY_PATHS="${mesa}/share/glvnd/egl_vendor.d"
           '';
