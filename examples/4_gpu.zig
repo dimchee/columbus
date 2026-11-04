@@ -452,15 +452,18 @@ pub inline fn conf_input(Op: type, x: Op, args: anytype) bool {
             std.debug.print("In capabilities\n", .{});
             if (x.capabilities.keyboard) {
                 std.debug.print("keyboard\n", .{});
-                args.con.io.sender.push(args.wl_seat, way.wl_seat.Request.get_keyboard{ .id = args.wl_keyboard });
+                const wl_keyboard = args.env.new(way.wl_keyboard);
+                args.con.io.sender.push(args.wl_seat, way.wl_seat.Request.get_keyboard{ .id = wl_keyboard });
             }
             if (x.capabilities.pointer) {
                 std.debug.print("pointer\n", .{});
-                args.con.io.sender.push(args.wl_seat, way.wl_seat.Request.get_pointer{ .id = args.wl_pointer });
+                const wl_pointer = args.env.new(way.wl_pointer);
+                args.con.io.sender.push(args.wl_seat, way.wl_seat.Request.get_pointer{ .id = wl_pointer });
             }
             if (x.capabilities.touch) {
                 std.debug.print("touch\n", .{});
             }
+            return false;
         },
         else => std.debug.print("Ignored message: {s}{}\n", .{ @typeName(Op), x }),
     }
@@ -583,14 +586,11 @@ pub fn main(init: std.process.Init) !void {
         .wl_seat = wl_seat,
     }, .{initial}, clb.wait_for(.fromMilliseconds(16)));
 
-    const wl_keyboard = env.new(way.wl_keyboard);
-    const wl_pointer = env.new(way.wl_pointer);
     try clb.loop(init.io, &con, &env, .{
         .wl_seat = wl_seat,
-        .wl_keyboard = wl_keyboard,
-        .wl_pointer = wl_pointer,
+        .env = &env,
         .con = &con,
-    }, .{conf_input}, clb.alwaysFalse);
+    }, .{conf_input}, clb.wait_for(.fromMilliseconds(16)));
     con.send();
 
     const wl_surface = env.new(way.wl_surface);
