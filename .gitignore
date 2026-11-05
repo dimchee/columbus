@@ -4,3 +4,4 @@ keymap
 .zig-cache
 .direnv
 src/wayland.zig
+tmp/

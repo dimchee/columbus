@@ -18,7 +18,7 @@
         libglvnd = pkgs.libglvnd;
         mesa = pkgs.mesa;
         gbm = pkgs.libgbm;
-        runtimeLibs = [ libglvnd mesa gbm ];
+        runtimeLibs = [ libglvnd mesa gbm pkgs.vulkan-loader ];
         runtimeLibraryPath = pkgs.lib.makeLibraryPath runtimeLibs;
 
         # The example uses dlopen("libEGL.so.1"), so the libraries must be
@@ -34,7 +34,7 @@
       in {
         devShells.default = pkgs.mkShell {
           name = "columbus-gpu";
-          buildInputs = [ zig ] ++ runtimeLibs;
+          buildInputs = [ zig pkgs.zls ] ++ runtimeLibs;
           shellHook = ''
             export LD_LIBRARY_PATH="${runtimeLibraryPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             export LIBGL_DRIVERS_PATH="${mesa}/lib/dri"
