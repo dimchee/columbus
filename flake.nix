@@ -1,5 +1,5 @@
 {
-  description = "Dev shell for the columbus GPU (OpenGL/EGL) Wayland example";
+  description = "Dev shell for the columbus GPU (OpenGL/EGL, Vulkan) Wayland examples";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -21,14 +21,18 @@
         runtimeLibs = [ libglvnd mesa gbm pkgs.vulkan-loader ];
         runtimeLibraryPath = pkgs.lib.makeLibraryPath runtimeLibs;
 
-        # The example uses dlopen("libEGL.so.1"), so the libraries must be
+        # The examples use dlopen("libEGL.so.1"), so the libraries must be
         # findable at runtime, not just at link time. Wrap Zig so that
         # `zig build run` (and the binary it starts) always gets the right
         # loader environment, even if the surrounding shell is stale.
+        #
+        # VULKAN_HEADERS is consumed by build.zig for the @cImport in the Vulkan
+        # example; the wrapper exports it for the same reason as above.
         zig = pkgs.writeShellScriptBin "zig" ''
           export LD_LIBRARY_PATH="${runtimeLibraryPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           export LIBGL_DRIVERS_PATH="${mesa}/lib/dri"
           export __EGL_VENDOR_LIBRARY_PATHS="${mesa}/share/glvnd/egl_vendor.d"
+          export VULKAN_HEADERS="${pkgs.vulkan-headers}/include"
           exec ${pkgs.zig}/bin/zig "$@"
         '';
       in {
@@ -39,6 +43,7 @@
             export LD_LIBRARY_PATH="${runtimeLibraryPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             export LIBGL_DRIVERS_PATH="${mesa}/lib/dri"
             export __EGL_VENDOR_LIBRARY_PATHS="${mesa}/share/glvnd/egl_vendor.d"
+            export VULKAN_HEADERS="${pkgs.vulkan-headers}/include"
           '';
         };
       });

@@ -21,6 +21,12 @@ pub fn build(b: *std.Build) void {
             }),
         });
         exe.root_module.link_libc = true;
+        // The Vulkan example imports <vulkan/vulkan.h> with @cImport. The dev
+        // shell exports VULKAN_HEADERS as the include directory provided by the
+        // vulkan-headers package.
+        if (b.graph.environ_map.get("VULKAN_HEADERS")) |include_dir| {
+            exe.root_module.addSystemIncludePath(.{ .cwd_relative = include_dir });
+        }
         b.installArtifact(exe);
         const run_step = b.step("run", "Run the app");
         const run_cmd = b.addRunArtifact(exe);
